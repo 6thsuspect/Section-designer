@@ -755,6 +755,7 @@ Example:
 1.0.0
 1.1.0
 1.1.1
+1.1.2
 ```
 
 Engineering calculation changes should be documented clearly in the
