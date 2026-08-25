@@ -1,0 +1,192 @@
+# ==========================================
+
+# Section Designer - Next.js / React / TypeScript
+
+# ==========================================
+
+# Dependencies
+
+node_modules/
+.pnp/
+.pnp.js
+
+# Next.js
+
+.next/
+out/
+
+# Production build
+
+build/
+dist/
+
+# TypeScript
+
+*.tsbuildinfo
+
+# Environment variables
+
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+.env.*.local
+
+# Keep example environment files
+
+!.env.example
+
+# Vercel
+
+.vercel/
+
+# Logs
+
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+# Runtime / temporary files
+
+*.pid
+*.seed
+*.pid.lock
+.tmp/
+temp/
+tmp/
+
+# Testing / coverage
+
+coverage/
+.nyc_output/
+
+# ESLint cache
+
+.eslintcache
+
+# Prettier cache
+
+.prettier-cache
+
+# OS generated files
+
+.DS_Store
+.DS_Store?
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+# Windows thumbnail cache
+
+Thumbs.db
+Thumbs.db:encryptable
+
+# IDE / editors
+
+.vscode/*
+!.vscode/settings.json
+!.vscode/extensions.json
+!.vscode/tasks.json
+!.vscode/launch.json
+
+.idea/
+*.iml
+
+# Vim
+
+*.swp
+*.swo
+*~
+
+# Local development
+
+*.local
+
+# Database / local data
+
+*.sqlite
+*.sqlite3
+*.db
+
+# Drizzle local artifacts
+
+drizzle/
+drizzle-meta/
+drizzle-kit/
+
+# Generated engineering files
+
+generated/
+generated-files/
+exports/
+output/
+
+# Generated reports
+
+reports/
+*.pdf
+*.xlsx
+*.xls
+*.csv
+*.dxf
+
+# Local project files
+
+*.section.json
+*.project.json
+
+# Cache
+
+.cache/
+.parcel-cache/
+.turbo/
+
+# Misc
+
+.DS_Store
+*.bak
+*.backup
+*.old
+
+# Security
+
+*.pem
+*.key
+*.crt
+
+# Local secrets / credentials
+
+credentials.json
+service-account.json
+secrets.json
+*.secret
+
+# Claude / AI local files
+
+.claude/
+CLAUDE.local.md
+
+# ==========================================
+
+# IMPORTANT
+
+# ==========================================
+
+# Do NOT commit:
+
+# - API keys
+
+# - Database passwords
+
+# - .env files
+
+# - Private certificates
+
+# - Local build output
+
+# - node_modules
