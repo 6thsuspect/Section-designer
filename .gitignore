@@ -1,0 +1,14 @@
+# Dependencies
+node_modules/
+
+# Next.js build output
+.next/
+out/
+build/
+
+# TypeScript build info
+*.tsbuildinfo
+
+# Misc
+.DS_Store
+*.log

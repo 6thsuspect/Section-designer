@@ -1,11 +1,12 @@
 'use client';
-import React from 'react';
+import React, { useState } from 'react';
 
 interface Props {
   onClose: () => void;
 }
 
 export default function AboutDialog({ onClose }: Props) {
+  const [logoOk, setLogoOk] = useState(true);
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center" style={{ background: 'rgba(0,0,0,0.6)' }}>
       <div className="panel w-[480px] max-h-[85vh] flex flex-col" style={{ background: 'var(--bg-secondary)' }}>
@@ -17,11 +18,17 @@ export default function AboutDialog({ onClose }: Props) {
         <div className="flex-1 overflow-y-auto p-5">
           {/* App Info */}
           <div className="flex items-center gap-4 mb-6">
-            <div 
-              className="w-16 h-16 rounded-xl flex items-center justify-center font-extrabold text-2xl shrink-0" 
+            <div
+              className="w-16 h-16 rounded-xl flex items-center justify-center font-extrabold text-2xl shrink-0 overflow-hidden"
               style={{ background: 'var(--accent)' }}
             >
-              SD
+              {logoOk ? (
+                // Project logo asset — replace public/logo.svg to rebrand
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src="/logo.svg" alt="Section Designer" className="w-16 h-16 object-contain" onError={() => setLogoOk(false)} />
+              ) : (
+                'SD'
+              )}
             </div>
             <div>
               <h2 className="text-xl font-bold" style={{ color: 'var(--text-primary)' }}>Section Designer</h2>

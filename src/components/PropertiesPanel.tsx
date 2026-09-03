@@ -6,9 +6,11 @@ import { fmt, fmtSci } from '@/engine/geometry';
 
 interface Props {
   store: StoreState;
+  /** Open the coordinate editor for a custom-shape/polygon component */
+  onEditCoordinates?: (comp: import('@/engine/types').SectionComponent) => void;
 }
 
-export default function PropertiesPanel({ store }: Props) {
+export default function PropertiesPanel({ store, onEditCoordinates }: Props) {
   const [tab, setTab] = useState<'properties' | 'geometry' | 'settings'>('properties');
   const selectedComp = store.project.components.find(c => c.id === store.selectedComponentId);
 
@@ -43,7 +45,7 @@ export default function PropertiesPanel({ store }: Props) {
         {tab === 'properties' ? (
           <SectionPropertiesView store={store} />
         ) : tab === 'geometry' ? (
-          selectedComp ? <GeometryEditor store={store} comp={selectedComp} /> : (
+          selectedComp ? <GeometryEditor store={store} comp={selectedComp} onEditCoordinates={onEditCoordinates} /> : (
             <div className="p-4 text-center text-xs" style={{ color: 'var(--text-muted)' }}>
               Select a component to edit its geometry.
             </div>
@@ -210,6 +212,67 @@ function SectionPropertiesView({ store }: { store: StoreState }) {
           <PropRow label="NA Angle" value={`${fmt(store.stressResult.neutralAxisAngle)}°`} />
         </>
       )}
+
+      {/* ─── Extended engineering properties (Y-Z user axes, U-V principal axes) ─── */}
+      <div className="panel-header">Properties — Y-Z / U-V Axes</div>
+      <div className="px-2 py-1 text-[10px]" style={{ color: 'var(--text-muted)' }}>
+        Y = horizontal axis, Z = vertical axis. U-V are the principal axes; α is measured CCW from Y to U.
+      </div>
+
+      <div className="panel-header" style={{ borderTop: '1px solid var(--border)' }}>Basic</div>
+      <XPropRow symbol="A" name="Cross-sectional area" value={fmt(p.area)} unit={`${unit}²`} />
+      <XPropRow symbol="α" name="Angle between Y-Z and U-V" value={fmt(p.principalAngle)} unit="°" />
+      <XPropRow symbol="yM" name="Centroid distance along Y" value={fmt(p.centroidX)} unit={unit} />
+      <XPropRow symbol="zM" name="Centroid distance along Z" value={fmt(p.centroidY)} unit={unit} />
+
+      <div className="panel-header">Centroidal Inertias</div>
+      <XPropRow symbol="Iy" name="Inertia about axis ∥ Y" value={fmtSci(p.Ix)} unit={`${unit}⁴`} />
+      <XPropRow symbol="Iz" name="Inertia about axis ∥ Z" value={fmtSci(p.Iy)} unit={`${unit}⁴`} />
+      <XPropRow symbol="Iyz" name="Product of inertia (Y-Z)" value={fmtSci(p.Ixy)} unit={`${unit}⁴`} />
+      <XPropRow symbol="Iu" name="Inertia about U axis" value={fmtSci(p.Iu)} unit={`${unit}⁴`} />
+      <XPropRow symbol="Iv" name="Inertia about V axis" value={fmtSci(p.Iv)} unit={`${unit}⁴`} />
+
+      <div className="panel-header">Torsion</div>
+      <XPropRow symbol="It" name="Torsional constant (St. Venant)" value={fmtSci(p.It)} unit={`${unit}⁴`} />
+
+      <div className="panel-header">Radius of Gyration</div>
+      <XPropRow symbol="iy" name="About axis ∥ Y" value={fmt(p.rx)} unit={unit} />
+      <XPropRow symbol="iz" name="About axis ∥ Z" value={fmt(p.ry)} unit={unit} />
+      <XPropRow symbol="iu" name="About U axis" value={fmt(p.iu)} unit={unit} />
+      <XPropRow symbol="iv" name="About V axis" value={fmt(p.iv)} unit={unit} />
+
+      <div className="panel-header">Elastic Section Modulus</div>
+      <XPropRow symbol="Wu+" name="About U, +ve extreme fibre" value={fmtSci(p.WuP)} unit={`${unit}³`} />
+      <XPropRow symbol="Wu−" name="About U, −ve extreme fibre" value={fmtSci(p.WuM)} unit={`${unit}³`} />
+      <XPropRow symbol="Wv+" name="About V, +ve extreme fibre" value={fmtSci(p.WvP)} unit={`${unit}³`} />
+      <XPropRow symbol="Wv−" name="About V, −ve extreme fibre" value={fmtSci(p.WvM)} unit={`${unit}³`} />
+
+      <div className="panel-header">Plastic Section Modulus</div>
+      <XPropRow symbol="Wpl,u" name="Plastic modulus about U" value={fmtSci(p.Wplu)} unit={`${unit}³`} />
+      <XPropRow symbol="Wpl,v" name="Plastic modulus about V" value={fmtSci(p.Wplv)} unit={`${unit}³`} />
+
+      <div className="panel-header">Extreme Fibre / Compression Zone</div>
+      <XPropRow symbol="au+" name="Centroid → edge, +U" value={fmt(p.auP)} unit={unit} />
+      <XPropRow symbol="au−" name="Centroid → edge, −U" value={fmt(p.auM)} unit={unit} />
+      <XPropRow symbol="av+" name="Centroid → edge, +V" value={fmt(p.avP)} unit={unit} />
+      <XPropRow symbol="av−" name="Centroid → edge, −V" value={fmt(p.avM)} unit={unit} />
+
+      <div className="panel-header">Equal-Area Axis</div>
+      <XPropRow symbol="yP" name="Equal-area axis along Y" value={fmt(p.yP)} unit={unit} />
+      <XPropRow symbol="zP" name="Equal-area axis along Z" value={fmt(p.zP)} unit={unit} />
+      <XPropRow symbol="uP" name="Equal-area axis along U" value={fmt(p.uP)} unit={unit} />
+      <XPropRow symbol="vP" name="Equal-area axis along V" value={fmt(p.vP)} unit={unit} />
+    </div>
+  );
+}
+
+/** Extended property row: Symbol | Name | Value + Unit */
+function XPropRow({ symbol, name, value, unit }: { symbol: string; name: string; value: string; unit: string }) {
+  return (
+    <div className="prop-row" title={name}>
+      <span className="prop-label font-mono font-semibold w-12 shrink-0" style={{ color: 'var(--accent)' }}>{symbol}</span>
+      <span className="prop-label flex-1 truncate" style={{ marginRight: 6 }}>{name}</span>
+      <span className="prop-value">{value} <span style={{ color: 'var(--text-muted)', fontSize: '0.6875rem' }}>{unit}</span></span>
     </div>
   );
 }
@@ -225,7 +288,11 @@ function PropRow({ label, value, highlight }: { label: string; value: string; hi
   );
 }
 
-function GeometryEditor({ store, comp }: { store: StoreState; comp: import('@/engine/types').SectionComponent }) {
+function GeometryEditor({ store, comp, onEditCoordinates }: {
+  store: StoreState;
+  comp: import('@/engine/types').SectionComponent;
+  onEditCoordinates?: (comp: import('@/engine/types').SectionComponent) => void;
+}) {
   const g = comp.geometry;
 
   const update = (geo: Partial<import('@/engine/types').ComponentGeometry>) => {
@@ -249,6 +316,28 @@ function GeometryEditor({ store, comp }: { store: StoreState; comp: import('@/en
           onChange={e => store.updateComponent(comp.id, { name: e.target.value })}
         />
       </div>
+
+      {/* Custom coordinate geometry: point count + coordinate editor */}
+      {(comp.type === 'custom-shape' || comp.type === 'polygon') && (
+        <div className="p-2">
+          <label className="text-[10px] font-semibold uppercase mb-0.5 block" style={{ color: 'var(--text-muted)' }}>
+            Coordinate Points
+          </label>
+          <div className="text-xs font-mono mb-2" style={{ color: 'var(--text-secondary)' }}>
+            {(g.points ?? []).length} point{(g.points ?? []).length !== 1 ? 's' : ''} defined
+          </div>
+          <button
+            className="btn btn-primary w-full text-xs"
+            onClick={() => onEditCoordinates?.(comp)}
+            title="View and edit the coordinate points of this custom shape"
+          >
+            ✏️ Edit Coordinates
+          </button>
+          <div className="text-[10px] mt-1" style={{ color: 'var(--text-muted)' }}>
+            Edit X/Y values, add, delete or reorder points. The drawing and section properties update on Apply.
+          </div>
+        </div>
+      )}
 
       {/* Position */}
       <div className="panel-header">Position</div>

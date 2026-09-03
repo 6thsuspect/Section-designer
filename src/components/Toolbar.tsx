@@ -1,5 +1,5 @@
 'use client';
-import React from 'react';
+import React, { useState } from 'react';
 import type { StoreState } from '@/store/useStore';
 import ExportMenu from './ExportMenu';
 
@@ -19,18 +19,30 @@ interface ToolbarProps {
   onOpenSettings: () => void;
   onOpenAbout: () => void;
   hasSection: boolean;
+  theme: 'dark' | 'light';
+  onToggleTheme: () => void;
 }
 
 export default function Toolbar({ 
   store, onSave, onLoad, 
   onExportJSON, onExportCSV, onExportPDF, onExportDXF, onExportExcel, onImportJSON,
-  showGrid, onToggleGrid, onFitView, onOpenSettings, onOpenAbout, hasSection 
+  showGrid, onToggleGrid, onFitView, onOpenSettings, onOpenAbout, hasSection,
+  theme, onToggleTheme 
 }: ToolbarProps) {
+  const [logoOk, setLogoOk] = useState(true);
   return (
     <div className="h-11 flex items-center px-3 gap-1 border-b" style={{ background: 'var(--bg-secondary)', borderColor: 'var(--border)' }}>
       {/* Brand */}
       <div className="flex items-center gap-2 mr-4">
-        <div className="w-7 h-7 rounded flex items-center justify-center font-extrabold text-sm" style={{ background: 'var(--accent)' }}>SD</div>
+        <div className="w-7 h-7 rounded flex items-center justify-center font-extrabold text-sm overflow-hidden" style={{ background: 'var(--accent)' }}>
+          {logoOk ? (
+            // Project logo asset — replace public/logo.svg to rebrand
+            // eslint-disable-next-line @next/next/no-img-element
+            <img src="/logo.svg" alt="Section Designer" className="w-7 h-7 object-contain" onError={() => setLogoOk(false)} />
+          ) : (
+            'SD'
+          )}
+        </div>
         <div className="hidden sm:block">
           <div className="text-sm font-bold leading-tight">Section Designer</div>
           <div className="text-[10px] leading-tight" style={{ color: 'var(--text-muted)' }}>Draw · Analyse · Design</div>
@@ -87,6 +99,18 @@ export default function Toolbar({
         onImportJSON={onImportJSON}
         disabled={!hasSection}
       />
+
+      <div className="w-px h-6 mx-1" style={{ background: 'var(--border)' }} />
+
+      {/* Dark / Light mode toggle */}
+      <button className="btn btn-ghost text-xs" onClick={onToggleTheme} title={theme === 'dark' ? 'Switch to Light Mode' : 'Switch to Dark Mode'}>
+        {theme === 'dark' ? (
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>
+        ) : (
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z"/></svg>
+        )}
+        {theme === 'dark' ? 'Light' : 'Dark'}
+      </button>
 
       <div className="w-px h-6 mx-1" style={{ background: 'var(--border)' }} />
 
