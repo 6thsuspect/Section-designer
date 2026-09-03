@@ -9,9 +9,11 @@ interface Props {
   store: StoreState;
   collapsed: boolean;
   onToggle: () => void;
+  /** Panel height in px (resizable from the parent layout); default 280 */
+  height?: number;
 }
 
-export default function BottomPanel({ store, collapsed, onToggle }: Props) {
+export default function BottomPanel({ store, collapsed, onToggle, height = 280 }: Props) {
   const [tab, setTab] = useState<Tab>('trace');
 
   if (collapsed) {
@@ -34,7 +36,7 @@ export default function BottomPanel({ store, collapsed, onToggle }: Props) {
   }
 
   return (
-    <div className="flex flex-col border-t" style={{ background: 'var(--bg-secondary)', borderColor: 'var(--border)', height: '280px' }}>
+    <div className="flex flex-col border-t" style={{ background: 'var(--bg-secondary)', borderColor: 'var(--border)', height: `${height}px` }}>
       {/* Tab bar */}
       <div className="flex items-center gap-0 px-2 border-b" style={{ borderColor: 'var(--border)' }}>
         {([

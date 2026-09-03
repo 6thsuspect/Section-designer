@@ -103,6 +103,34 @@ export interface SectionProperties {
   yMin: number;
   xMax: number;
   xMin: number;
+
+  // ─── Extended properties (Y-Z user axes / U-V principal axes) ──────────
+  // Axis convention: application X (horizontal) ≡ engineering Y,
+  //                  application Y (vertical)   ≡ engineering Z.
+  // U-V are the principal axes; α is the angle from Y to U (CCW, degrees).
+  It: number;              // St. Venant torsional constant
+  Iu: number;              // moment of inertia about U axis (= Imax)
+  Iv: number;              // moment of inertia about V axis (= Imin)
+  iu: number;              // radius of gyration about U
+  iv: number;              // radius of gyration about V
+  uMax: number;            // extreme fibre coordinate along +U (from centroid)
+  uMin: number;            // extreme fibre coordinate along −U
+  vMax: number;            // extreme fibre coordinate along +V
+  vMin: number;            // extreme fibre coordinate along −V
+  WuP: number;             // elastic modulus about U (+ve extreme fibre)
+  WuM: number;             // elastic modulus about U (−ve extreme fibre)
+  WvP: number;             // elastic modulus about V (+ve extreme fibre)
+  WvM: number;             // elastic modulus about V (−ve extreme fibre)
+  Wplu: number;            // plastic modulus about U axis
+  Wplv: number;            // plastic modulus about V axis
+  auP: number;             // centroid → edge distance along +U
+  auM: number;             // centroid → edge distance along −U
+  avP: number;             // centroid → edge distance along +V
+  avM: number;             // centroid → edge distance along −V
+  yP: number;              // equal-area axis position along Y (from centroid)
+  zP: number;              // equal-area axis position along Z (from centroid)
+  uP: number;              // equal-area axis position along U (from centroid)
+  vP: number;              // equal-area axis position along V (from centroid)
 }
 
 export interface StressInput {

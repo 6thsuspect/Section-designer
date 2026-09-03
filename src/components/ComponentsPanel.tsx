@@ -20,9 +20,11 @@ const COMPONENT_TYPES: { type: ComponentType; label: string; icon: string }[] = 
 interface Props {
   store: StoreState;
   onOpenCustomShape: () => void;
+  /** Open the coordinate editor for a custom-shape/polygon component */
+  onEditCoordinates?: (comp: SectionComponent) => void;
 }
 
-export default function ComponentsPanel({ store, onOpenCustomShape }: Props) {
+export default function ComponentsPanel({ store, onOpenCustomShape, onEditCoordinates }: Props) {
   const [showAdd, setShowAdd] = useState(false);
 
   return (
@@ -81,13 +83,14 @@ export default function ComponentsPanel({ store, onOpenCustomShape }: Props) {
             <ComponentTreeItem
               key={comp.id}
               comp={comp}
-              selected={store.selectedComponentId === comp.id}
+              selected={store.selectedIds.includes(comp.id)}
               onSelect={() => store.selectComponent(comp.id)}
               onDelete={() => store.deleteComponent(comp.id)}
               onDuplicate={() => store.duplicateComponent(comp.id)}
               onToggleVisible={() => store.updateComponent(comp.id, { visible: !comp.visible })}
               onToggleLocked={() => store.updateComponent(comp.id, { locked: !comp.locked })}
               onToggleOperation={() => store.updateComponent(comp.id, { operation: comp.operation === 'add' ? 'subtract' : 'add' })}
+              onEditCoordinates={onEditCoordinates ? () => onEditCoordinates(comp) : undefined}
             />
           ))
         )}
@@ -96,7 +99,7 @@ export default function ComponentsPanel({ store, onOpenCustomShape }: Props) {
   );
 }
 
-function ComponentTreeItem({ comp, selected, onSelect, onDelete, onDuplicate, onToggleVisible, onToggleLocked, onToggleOperation }: {
+function ComponentTreeItem({ comp, selected, onSelect, onDelete, onDuplicate, onToggleVisible, onToggleLocked, onToggleOperation, onEditCoordinates }: {
   comp: SectionComponent;
   selected: boolean;
   onSelect: () => void;
@@ -105,6 +108,7 @@ function ComponentTreeItem({ comp, selected, onSelect, onDelete, onDuplicate, on
   onToggleVisible: () => void;
   onToggleLocked: () => void;
   onToggleOperation: () => void;
+  onEditCoordinates?: () => void;
 }) {
   return (
     <div
@@ -137,6 +141,15 @@ function ComponentTreeItem({ comp, selected, onSelect, onDelete, onDuplicate, on
         {comp.locked && '🔒 '}{comp.name}
       </span>
 
+      {onEditCoordinates && (comp.type === 'custom-shape' || comp.type === 'polygon') && (
+        <button
+          className="w-4 h-4 text-[10px] opacity-50 hover:opacity-100 shrink-0"
+          onClick={e => { e.stopPropagation(); onEditCoordinates(); }}
+          title="Edit coordinates"
+        >
+          ✏️
+        </button>
+      )}
       <button 
         className="w-4 h-4 text-[10px] opacity-50 hover:opacity-100 shrink-0" 
         onClick={e => { e.stopPropagation(); onToggleLocked(); }} 

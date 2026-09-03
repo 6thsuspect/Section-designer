@@ -1,4 +1,22 @@
-import type { SectionComponent, QAMessage } from './types';
+import type { SectionComponent, QAMessage, Point } from './types';
+import { segmentsIntersect } from './geometry';
+
+// Detect self-intersection of a polygon outline (ignores adjacent edges,
+// which always share a vertex).
+function polygonIsSelfIntersecting(pts: Point[]): boolean {
+  const n = pts.length;
+  if (n < 4) return false;
+  for (let i = 0; i < n; i++) {
+    for (let j = i + 1; j < n; j++) {
+      // Skip edges sharing an endpoint
+      if (j === i || (j === (i + 1) % n) || ((j + 1) % n) === i) continue;
+      if (segmentsIntersect(pts[i], pts[(i + 1) % n], pts[j], pts[(j + 1) % n])) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
 
 export function validateComponents(components: SectionComponent[]): QAMessage[] {
   const messages: QAMessage[] = [];
@@ -35,6 +53,13 @@ export function validateComponents(components: SectionComponent[]): QAMessage[] 
     if (comp.type === 'polygon' || comp.type === 'custom-shape') {
       if ((g.points ?? []).length < 3) {
         messages.push({ level: 'error', category: 'geometry', message: `${comp.name}: Custom/polygon shape needs at least 3 points.`, componentId: comp.id });
+      } else if (polygonIsSelfIntersecting(g.points ?? [])) {
+        messages.push({
+          level: 'warning',
+          category: 'engineering',
+          message: `${comp.name}: Outline is self-intersecting. Properties are computed with signed areas and may be unreliable — check the geometry.`,
+          componentId: comp.id,
+        });
       }
     }
 

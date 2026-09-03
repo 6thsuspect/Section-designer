@@ -146,4 +146,31 @@
     pointer-events: none;
     white-space: nowrap;
   }
+
+  /* Panel resize handles (dockable panel edges) */
+  .panel-resizer {
+    flex-shrink: 0;
+    position: relative;
+    z-index: 20;
+    touch-action: none;
+    transition: background 0.15s;
+  }
+  .panel-resizer-v {
+    width: 5px;
+    margin: 0 -2px;
+    cursor: col-resize;
+  }
+  .panel-resizer-h {
+    height: 5px;
+    margin: -2px 0;
+    cursor: row-resize;
+  }
+  .panel-resizer:hover {
+    background: var(--accent);
+    opacity: 0.6;
+  }
+  .panel-resizer:active {
+    background: var(--accent);
+    opacity: 0.9;
+  }
 }

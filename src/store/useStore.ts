@@ -41,6 +41,7 @@ function createDefaultProject(): SectionProject {
 export interface StoreState {
   project: SectionProject;
   selectedComponentId: string | null;
+  selectedIds: string[];
   properties: SectionProperties | null;
   stressResult: { maxCompression: number; maxTension: number; stressAt: (x: number, y: number) => number; neutralAxisAngle: number; trace: CalcTrace } | null;
   calcTrace: CalcTrace | null;
@@ -52,10 +53,13 @@ export interface StoreState {
   setProject: (p: SectionProject) => void;
   addComponent: (type: SectionComponent['type']) => void;
   addCustomShape: (name: string, points: { x: number; y: number }[]) => string;
-  updateComponent: (id: string, updates: Partial<SectionComponent>) => void;
+  updateComponent: (id: string, updates: Partial<SectionComponent>, opts?: { history?: boolean }) => void;
   deleteComponent: (id: string) => void;
+  deleteComponents: (ids: string[]) => void;
   duplicateComponent: (id: string) => void;
   selectComponent: (id: string | null) => void;
+  selectComponents: (ids: string[]) => void;
+  pushUndoSnapshot: () => void;
   setLoads: (loads: StressInput) => void;
   setProjectMeta: (name: string, description: string) => void;
   setUnits: (u: LengthUnit) => void;
@@ -68,6 +72,7 @@ export interface StoreState {
 export function useStore(): StoreState {
   const [project, setProjectState] = useState<SectionProject>(createDefaultProject);
   const [selectedComponentId, setSelectedComponentId] = useState<string | null>(null);
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [properties, setProperties] = useState<SectionProperties | null>(null);
   const [stressResult, setStressResult] = useState<StoreState['stressResult']>(null);
   const [calcTrace, setCalcTrace] = useState<CalcTrace | null>(null);
@@ -111,9 +116,9 @@ export function useStore(): StoreState {
     setQaMessages(validateComponents(p.components));
   }, [project, pushUndo]);
 
-  const updateProjectAndRecalc = useCallback((updater: (p: SectionProject) => SectionProject) => {
+  const updateProjectAndRecalc = useCallback((updater: (p: SectionProject) => SectionProject, history = true) => {
     setProjectState(prev => {
-      pushUndo(prev);
+      if (history) pushUndo(prev);
       const next = updater(prev);
       next.updatedAt = new Date().toISOString();
       // schedule recalculate
@@ -166,6 +171,7 @@ export function useStore(): StoreState {
 
     updateProjectAndRecalc(p => ({ ...p, components: [...p.components, comp] }));
     setSelectedComponentId(id);
+    setSelectedIds([id]);
   }, [updateProjectAndRecalc]);
 
   const addCustomShape = useCallback((name: string, points: { x: number; y: number }[]) => {
@@ -187,14 +193,15 @@ export function useStore(): StoreState {
 
     updateProjectAndRecalc(p => ({ ...p, components: [...p.components, comp] }));
     setSelectedComponentId(id);
+    setSelectedIds([id]);
     return id;
   }, [updateProjectAndRecalc]);
 
-  const updateComponent = useCallback((id: string, updates: Partial<SectionComponent>) => {
+  const updateComponent = useCallback((id: string, updates: Partial<SectionComponent>, opts?: { history?: boolean }) => {
     updateProjectAndRecalc(p => ({
       ...p,
       components: p.components.map(c => c.id === id ? { ...c, ...updates } : c),
-    }));
+    }), opts?.history !== false);
   }, [updateProjectAndRecalc]);
 
   const deleteComponent = useCallback((id: string) => {
@@ -203,7 +210,26 @@ export function useStore(): StoreState {
       components: p.components.filter(c => c.id !== id),
     }));
     setSelectedComponentId(prev => prev === id ? null : prev);
+    setSelectedIds(prev => prev.filter(x => x !== id));
   }, [updateProjectAndRecalc]);
+
+  // Multi-select delete: single undo step for the whole batch.
+  const deleteComponents = useCallback((ids: string[]) => {
+    if (ids.length === 0) return;
+    const idSet = new Set(ids);
+    updateProjectAndRecalc(p => ({
+      ...p,
+      components: p.components.filter(c => !idSet.has(c.id)),
+    }));
+    setSelectedComponentId(prev => prev !== null && idSet.has(prev) ? null : prev);
+    setSelectedIds(prev => prev.filter(x => !idSet.has(x)));
+  }, [updateProjectAndRecalc]);
+
+  // Manual history point (e.g. before starting a canvas drag so that the
+  // whole drag produces a single undo entry).
+  const pushUndoSnapshot = useCallback(() => {
+    pushUndo(project);
+  }, [pushUndo, project]);
 
   const duplicateComponent = useCallback((id: string) => {
     updateProjectAndRecalc(p => {
@@ -271,6 +297,7 @@ export function useStore(): StoreState {
     const p = createDefaultProject();
     setProjectState(p);
     setSelectedComponentId(null);
+    setSelectedIds([]);
     setProperties(null);
     setCalcTrace(null);
     setStressResult(null);
@@ -282,6 +309,7 @@ export function useStore(): StoreState {
   return {
     project,
     selectedComponentId,
+    selectedIds,
     properties,
     stressResult,
     calcTrace,
@@ -293,8 +321,17 @@ export function useStore(): StoreState {
     addCustomShape,
     updateComponent,
     deleteComponent,
+    deleteComponents,
     duplicateComponent,
-    selectComponent: setSelectedComponentId,
+    selectComponent: (id: string | null) => {
+      setSelectedComponentId(id);
+      setSelectedIds(id !== null ? [id] : []);
+    },
+    selectComponents: (ids: string[]) => {
+      setSelectedIds(ids);
+      setSelectedComponentId(ids.length > 0 ? ids[ids.length - 1] : null);
+    },
+    pushUndoSnapshot,
     setLoads,
     setProjectMeta,
     setUnits,

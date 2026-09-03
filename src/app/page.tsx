@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useCallback, useEffect } from 'react';
+import React, { useState, useCallback, useEffect, useRef } from 'react';
 import { useStore } from '@/store/useStore';
 import Toolbar from '@/components/Toolbar';
 import ComponentsPanel from '@/components/ComponentsPanel';
@@ -13,7 +13,7 @@ import CustomShapeDialog from '@/components/CustomShapeDialog';
 import AboutDialog from '@/components/AboutDialog';
 import ImportDialog from '@/components/ImportDialog';
 import { downloadJSON, downloadCSV, exportPDF, downloadDXF, exportExcel } from '@/engine/exporters';
-import type { Point, SectionProject } from '@/engine/types';
+import type { Point, SectionProject, SectionComponent } from '@/engine/types';
 
 const DEFAULT_SETTINGS: AppSettings = {
   theme: 'dark',
@@ -21,6 +21,14 @@ const DEFAULT_SETTINGS: AppSettings = {
   dimensionFontScale: 1.5,
   accentColor: '#3b82f6',
 };
+
+// Local persistence for app settings (theme etc.)
+const SETTINGS_KEY = 'section-designer-settings';
+
+// Panel resize bounds
+const LEFT_MIN = 180, LEFT_MAX = 420;
+const RIGHT_MIN = 220, RIGHT_MAX = 520;
+const BOTTOM_MIN = 120, BOTTOM_MAX_RATIO = 0.6;
 
 export default function Home() {
   const store = useStore();
@@ -36,7 +44,42 @@ export default function Home() {
   const [showImport, setShowImport] = useState(false);
   const [settings, setSettings] = useState<AppSettings>(DEFAULT_SETTINGS);
 
+  // Resizable panels
+  const [leftWidth, setLeftWidth] = useState(224);
+  const [rightWidth, setRightWidth] = useState(256);
+  const [bottomHeight, setBottomHeight] = useState(280);
+  const [isResizing, setIsResizing] = useState(false);
+
+  // Custom shape editing (Edit Coordinates)
+  const [editingShape, setEditingShape] = useState<{ id: string; name: string; points: Point[] } | null>(null);
+
   const hasSection = store.properties !== null && store.properties.area > 0;
+
+  // Load persisted settings once on mount (deferred so the first render
+  // matches the server output — same apply-after-mount flow as the theme)
+  useEffect(() => {
+    const t = setTimeout(() => {
+      try {
+        const raw = window.localStorage.getItem(SETTINGS_KEY);
+        if (raw) {
+          const parsed = JSON.parse(raw);
+          setSettings({ ...DEFAULT_SETTINGS, ...parsed });
+        }
+      } catch {
+        // ignore malformed settings
+      }
+    }, 0);
+    return () => clearTimeout(t);
+  }, []);
+
+  // Persist settings whenever they change
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
+    } catch {
+      // storage unavailable — non-fatal
+    }
+  }, [settings]);
 
   // Apply theme
   useEffect(() => {
@@ -59,11 +102,15 @@ export default function Home() {
       root.style.setProperty('--border', '#334155');
     }
     root.style.setProperty('--accent', settings.accentColor);
-    
+
     // Font size
     const fontSizes = { small: '12px', medium: '14px', large: '16px' };
     root.style.fontSize = fontSizes[settings.fontSize];
   }, [settings]);
+
+  const toggleTheme = useCallback(() => {
+    setSettings(s => ({ ...s, theme: s.theme === 'dark' ? 'light' : 'dark' }));
+  }, []);
 
   // Fit view to content
   const fitView = useCallback(() => {
@@ -136,6 +183,21 @@ export default function Home() {
     store.addCustomShape(name, points);
   }, [store]);
 
+  // Apply edits to an existing custom shape (updates the same component,
+  // recomputes geometry and section properties immediately)
+  const handleUpdateCustomShape = useCallback((id: string, name: string, points: Point[]) => {
+    store.updateComponent(id, { name, geometry: { points } });
+    setEditingShape(null);
+  }, [store]);
+
+  const openEditCoordinates = useCallback((comp: SectionComponent) => {
+    setEditingShape({
+      id: comp.id,
+      name: comp.name,
+      points: (comp.geometry.points ?? []).map(p => ({ x: p.x, y: p.y })),
+    });
+  }, []);
+
   // Keyboard shortcuts
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
@@ -152,9 +214,13 @@ export default function Home() {
         switch (e.key.toLowerCase()) {
           case 'delete':
           case 'backspace':
-            if (store.selectedComponentId && document.activeElement?.tagName !== 'INPUT' && document.activeElement?.tagName !== 'TEXTAREA') {
+            if (store.selectedIds.length > 0 && document.activeElement?.tagName !== 'INPUT' && document.activeElement?.tagName !== 'TEXTAREA') {
               e.preventDefault();
-              store.deleteComponent(store.selectedComponentId);
+              if (store.selectedIds.length > 1) {
+                store.deleteComponents(store.selectedIds);
+              } else {
+                store.deleteComponent(store.selectedIds[0]);
+              }
             }
             break;
           case 'escape':
@@ -162,6 +228,7 @@ export default function Home() {
             setShowSettings(false);
             setShowCustomShape(false);
             setShowImport(false);
+            setEditingShape(null);
             break;
           case 'f':
             if (document.activeElement?.tagName !== 'INPUT') fitView();
@@ -176,8 +243,49 @@ export default function Home() {
     return () => window.removeEventListener('keydown', handler);
   }, [store, fitView]);
 
+  // ─── Panel resizing ──────────────────────────────────────────────────────
+  const resizeState = useRef<{ pointerId: number; axis: 'x' | 'y'; start: number; size: number } | null>(null);
+
+  const beginResize = useCallback((
+    e: React.PointerEvent,
+    axis: 'x' | 'y',
+    currentSize: number,
+    apply: (size: number) => void,
+    min: number,
+    max: number,
+    invert: boolean,
+  ) => {
+    e.preventDefault();
+    const el = e.currentTarget as HTMLElement;
+    el.setPointerCapture(e.pointerId);
+    resizeState.current = { pointerId: e.pointerId, axis, start: axis === 'x' ? e.clientX : e.clientY, size: currentSize };
+    setIsResizing(true);
+
+    const onMove = (ev: PointerEvent) => {
+      const st = resizeState.current;
+      if (!st || st.pointerId !== ev.pointerId) return;
+      const pos = axis === 'x' ? ev.clientX : ev.clientY;
+      const delta = pos - st.start;
+      const next = invert ? st.size - delta : st.size + delta;
+      apply(Math.max(min, Math.min(max, next)));
+    };
+    const onUp = (ev: PointerEvent) => {
+      if (resizeState.current?.pointerId !== ev.pointerId) return;
+      resizeState.current = null;
+      setIsResizing(false);
+      el.removeEventListener('pointermove', onMove);
+      el.removeEventListener('pointerup', onUp);
+      el.removeEventListener('pointercancel', onUp);
+    };
+    el.addEventListener('pointermove', onMove);
+    el.addEventListener('pointerup', onUp);
+    el.addEventListener('pointercancel', onUp);
+  }, []);
+
+  const bottomMax = typeof window !== 'undefined' ? Math.max(BOTTOM_MIN, Math.round(window.innerHeight * BOTTOM_MAX_RATIO)) : 560;
+
   return (
-    <div className="h-screen flex flex-col" style={{ background: 'var(--bg-primary)' }}>
+    <div className="h-screen flex flex-col" style={{ background: 'var(--bg-primary)', userSelect: isResizing ? 'none' : undefined }}>
       {/* Toolbar */}
       <Toolbar
         store={store}
@@ -195,15 +303,25 @@ export default function Home() {
         onOpenSettings={() => setShowSettings(true)}
         onOpenAbout={() => setShowAbout(true)}
         hasSection={hasSection}
+        theme={settings.theme}
+        onToggleTheme={toggleTheme}
       />
 
       {/* Main content */}
       <div className="flex-1 flex overflow-hidden">
         {/* Left Panel - Components */}
         {leftPanelOpen && (
-          <div className="w-56 shrink-0 border-r overflow-hidden flex flex-col" style={{ background: 'var(--bg-secondary)', borderColor: 'var(--border)' }}>
-            <ComponentsPanel store={store} onOpenCustomShape={() => setShowCustomShape(true)} />
-          </div>
+          <>
+            <div className="shrink-0 border-r overflow-hidden flex flex-col" style={{ background: 'var(--bg-secondary)', borderColor: 'var(--border)', width: leftWidth }}>
+              <ComponentsPanel store={store} onOpenCustomShape={() => setShowCustomShape(true)} onEditCoordinates={openEditCoordinates} />
+            </div>
+            {/* Left panel resize handle */}
+            <div
+              className="panel-resizer panel-resizer-v"
+              onPointerDown={e => beginResize(e, 'x', leftWidth, setLeftWidth, LEFT_MIN, LEFT_MAX, false)}
+              title="Drag to resize"
+            />
+          </>
         )}
 
         {/* Center - Canvas */}
@@ -249,29 +367,50 @@ export default function Home() {
           </button>
 
           <div className="flex-1 overflow-hidden">
-            <Canvas 
-              store={store} 
-              showGrid={showGrid} 
-              viewBox={viewBox} 
+            <Canvas
+              store={store}
+              showGrid={showGrid}
+              viewBox={viewBox}
               setViewBox={setViewBox}
               dimensionFontScale={settings.dimensionFontScale}
             />
           </div>
 
+          {/* Bottom panel resize handle */}
+          {!bottomCollapsed && (
+            <div
+              className="panel-resizer panel-resizer-h"
+              onPointerDown={e => beginResize(e, 'y', bottomHeight, setBottomHeight, BOTTOM_MIN, bottomMax, true)}
+              title="Drag to resize"
+            />
+          )}
+
           {/* Bottom Panel */}
-          <BottomPanel store={store} collapsed={bottomCollapsed} onToggle={() => setBottomCollapsed(!bottomCollapsed)} />
+          <BottomPanel
+            store={store}
+            collapsed={bottomCollapsed}
+            onToggle={() => setBottomCollapsed(!bottomCollapsed)}
+            height={bottomHeight}
+          />
         </div>
 
-        {/* Right Panel - Properties */}
+        {/* Right panel resize handle */}
         {rightPanelOpen && (
-          <div className="w-64 shrink-0 border-l overflow-hidden flex flex-col" style={{ background: 'var(--bg-secondary)', borderColor: 'var(--border)' }}>
-            <PropertiesPanel store={store} />
-          </div>
+          <>
+            <div
+              className="panel-resizer panel-resizer-v"
+              onPointerDown={e => beginResize(e, 'x', rightWidth, setRightWidth, RIGHT_MIN, RIGHT_MAX, true)}
+              title="Drag to resize"
+            />
+            <div className="shrink-0 border-l overflow-hidden flex flex-col" style={{ background: 'var(--bg-secondary)', borderColor: 'var(--border)', width: rightWidth }}>
+              <PropertiesPanel store={store} onEditCoordinates={openEditCoordinates} />
+            </div>
+          </>
         )}
       </div>
 
       {/* Copyright Footer */}
-      <div 
+      <div
         className="h-6 flex items-center justify-center text-[10px] border-t shrink-0"
         style={{ background: 'var(--bg-secondary)', borderColor: 'var(--border)', color: 'var(--text-muted)' }}
       >
@@ -280,19 +419,28 @@ export default function Home() {
 
       {/* Dialogs */}
       <SaveLoadDialog store={store} mode={dialogMode} onClose={() => setDialogMode(null)} />
-      
+
       {showSettings && (
-        <SettingsDialog 
-          settings={settings} 
-          onSettingsChange={setSettings} 
-          onClose={() => setShowSettings(false)} 
+        <SettingsDialog
+          settings={settings}
+          onSettingsChange={setSettings}
+          onClose={() => setShowSettings(false)}
         />
       )}
 
-      {showCustomShape && (
+      {showCustomShape && !editingShape && (
         <CustomShapeDialog
           onClose={() => setShowCustomShape(false)}
           onCreateShape={handleCreateCustomShape}
+        />
+      )}
+
+      {editingShape && (
+        <CustomShapeDialog
+          onClose={() => setEditingShape(null)}
+          onCreateShape={handleCreateCustomShape}
+          editShape={editingShape}
+          onUpdateShape={handleUpdateCustomShape}
         />
       )}
 
@@ -301,8 +449,8 @@ export default function Home() {
       )}
 
       {showImport && (
-        <ImportDialog 
-          onClose={() => setShowImport(false)} 
+        <ImportDialog
+          onClose={() => setShowImport(false)}
           onImport={handleImportJSON}
         />
       )}
