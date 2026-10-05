@@ -2,7 +2,8 @@
 import { useState, useCallback, useRef } from 'react';
 import { v4 as uuid } from 'uuid';
 import type { SectionComponent, SectionProject, SectionProperties, StressInput, CalcTrace, Material, LengthUnit, QAMessage } from '@/engine/types';
-import { computeSectionProperties, computeStress } from '@/engine/geometry';
+import { centerComponentsAtCG, computeSectionProperties, computeStress } from '@/engine/geometry';
+import { synchronizeBoltDeductions } from '@/engine/boltDeductions';
 import { validateComponents } from '@/engine/qa';
 
 const defaultMaterial: Material = {
@@ -35,7 +36,17 @@ function createDefaultProject(): SectionProject {
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
     revision: 1,
+    alignCGToOrigin: false,
   };
+}
+
+/** Synchronize associated geometry and optionally maintain CG at (0,0). */
+function prepareProjectGeometry(project: SectionProject): SectionProject {
+  const synchronized = synchronizeBoltDeductions(project.components);
+  const components = project.alignCGToOrigin
+    ? centerComponentsAtCG(synchronized)
+    : synchronized;
+  return components === project.components ? project : { ...project, components };
 }
 
 export interface StoreState {
@@ -63,6 +74,7 @@ export interface StoreState {
   setLoads: (loads: StressInput) => void;
   setProjectMeta: (name: string, description: string) => void;
   setUnits: (u: LengthUnit) => void;
+  toggleCGOrigin: () => void;
   undo: () => void;
   redo: () => void;
   recalculate: () => void;
@@ -87,7 +99,9 @@ export function useStore(): StoreState {
   }, []);
 
   const recalculate = useCallback((proj?: SectionProject) => {
-    const p = proj ?? project;
+    const source = proj ?? project;
+    const p = prepareProjectGeometry(source);
+    if (p !== source) setProjectState(p);
     const result = computeSectionProperties(p.components);
     setProperties(result.props);
     setCalcTrace(result.trace);
@@ -102,25 +116,26 @@ export function useStore(): StoreState {
 
   const setProject = useCallback((p: SectionProject) => {
     pushUndo(project);
-    setProjectState(p);
-    // recalculate with new project
-    const result = computeSectionProperties(p.components);
+    const centeredProject = prepareProjectGeometry(p);
+    setProjectState(centeredProject);
+    // Recalculate after moving the dynamic CG reference to (0,0).
+    const result = computeSectionProperties(centeredProject.components);
     setProperties(result.props);
     setCalcTrace(result.trace);
-    if (p.loads && (p.loads.P !== 0 || p.loads.Mx !== 0 || p.loads.My !== 0)) {
-      const sr = computeStress(result.props, p.loads);
+    if (centeredProject.loads && (centeredProject.loads.P !== 0 || centeredProject.loads.Mx !== 0 || centeredProject.loads.My !== 0)) {
+      const sr = computeStress(result.props, centeredProject.loads);
       setStressResult(sr);
     } else {
       setStressResult(null);
     }
-    setQaMessages(validateComponents(p.components));
+    setQaMessages(validateComponents(centeredProject.components));
   }, [project, pushUndo]);
 
   const updateProjectAndRecalc = useCallback((updater: (p: SectionProject) => SectionProject, history = true) => {
     setProjectState(prev => {
       if (history) pushUndo(prev);
-      const next = updater(prev);
-      next.updatedAt = new Date().toISOString();
+      const updated = updater(prev);
+      const next = prepareProjectGeometry({ ...updated, updatedAt: new Date().toISOString() });
       // schedule recalculate
       setTimeout(() => {
         const result = computeSectionProperties(next.components);
@@ -257,6 +272,13 @@ export function useStore(): StoreState {
     setProjectState(prev => ({ ...prev, units }));
   }, []);
 
+  const toggleCGOrigin = useCallback(() => {
+    updateProjectAndRecalc(project => ({
+      ...project,
+      alignCGToOrigin: !project.alignCGToOrigin,
+    }));
+  }, [updateProjectAndRecalc]);
+
   const undo = useCallback(() => {
     const stack = undoStackRef.current;
     if (stack.length === 0) return;
@@ -335,6 +357,7 @@ export function useStore(): StoreState {
     setLoads,
     setProjectMeta,
     setUnits,
+    toggleCGOrigin,
     undo,
     redo,
     recalculate,

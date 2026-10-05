@@ -68,6 +68,54 @@ Custom shapes are represented as a dedicated `custom-shape` component
 type while using the polygon geometry engine for the mathematical
 calculations.
 
+### Canvas navigation and CG reference
+
+-   Mouse-wheel zoom follows the AutoCAD convention: wheel up zooms in and
+    wheel down zooms out, anchored at the mouse cursor.
+-   Zooming and panning only change the viewport; model dimensions and
+    engineering coordinates are not scaled or modified.
+-   With **CG → 0** enabled, all components are translated together so the
+    composite centre of gravity sits at the global origin, without changing
+    dimensions, rotations, or relative spacing.
+-   Section properties are always computed about the centroidal axes,
+    regardless of whether the toggle is enabled.
+
+### Rectangular bolt-hole deductions
+
+Bolt holes are modelled as net-section rectangular reductions (not circular
+cut-outs) on an individual rectangular plate:
+
+-   **Deduction depth = bolt-hole diameter**, **deduction width = parent plate
+    thickness** (the smaller plate dimension).
+-   Set the **number** of holes, the **edge distance** from the plate start
+    edge (local bottom for vertical plates, left for horizontal plates) to
+    hole 1, and an **individual spacing** for every following hole from the
+    hole before it:
+    `Plate edge → H1 (edge distance) → H2 (s1) → H3 (s2) → H4 (s3) → …`
+    All distances are to hole centres; a table shows every hole's resulting
+    distance from the edge.
+-   Choose how edits behave: **Shift following holes** (holes after the edited
+    one keep their spacings and move with it) or **Move this hole only** (the
+    next gap absorbs the change, so every other hole stays where it is).
+-   Adding a hole appends it at the last spacing; removing one keeps the
+    spacings of the remaining holes. Older projects saved with equal spacing
+    keep their hole positions.
+-   Each deduction is an associated `subtract` rectangle, so area, inertia,
+    moduli, stresses, reports, and exports reflect the net section.
+-   **Grouped** (default): deductions are collapsed beneath the parent plate
+    and follow its size, position, and rotation automatically.
+-   **Ungroup** (Properties panel or the `⊞ n` badge in the component tree):
+    deductions become separate, freely editable shapes still linked to the
+    plate. **Group** again to snap them back to the parametric pattern.
+-   QA flags, per hole, deductions that overlap the previous hole or extend
+    beyond either plate edge.
+
+### CG origin toggle
+
+The **CG → 0** toolbar toggle moves the composite centroid to the global
+origin `(0,0)` and keeps it aligned while geometry is edited. Turn it off to
+work in absolute coordinates; the C.G. marker shows the live centroid.
+
 ### Section properties
 
 The application calculates:
@@ -165,7 +213,21 @@ PDF export is intended to include:
 
 The PDF exporter uses `jsPDF` and `jspdf-autotable`.
 
-### DXF export
+### DXF import and export
+
+ASCII DXF drawings can be imported directly for section-property
+calculations. The importer supports:
+
+-   Closed `LWPOLYLINE` and R12 `POLYLINE` boundaries
+-   `CIRCLE` and full `ELLIPSE` entities
+-   Closed loops assembled from individual `LINE` and `ARC` entities
+-   Polyline bulge arcs, discretized at a maximum 10° increment
+-   Drawing units from `$INSUNITS`, with a manual unit override
+-   Automatic openings from nested contours or layers named `CUTOUT`,
+    `HOLE`, `VOID`, or `OPENING`
+
+Open geometry and unsupported annotation entities are skipped and reported
+before import. Binary DXF files must first be saved as ASCII DXF.
 
 DXF export produces CAD-compatible geometry using layers such as:
 

@@ -1,6 +1,7 @@
 // Engineering verification of section properties against hand calculations.
 // Run: node --experimental-strip-types scripts/verify-properties.mts
-import { computeSectionProperties, computeComponentTorsion } from '../src/engine/geometry.ts';
+import { centerComponentsAtCG, computeSectionProperties, computeComponentTorsion } from '../src/engine/geometry.ts';
+import { synchronizeBoltDeductions, withEdgeDistance, withSpacing, withCount, deductionPatternIssues } from '../src/engine/boltDeductions.ts';
 import type { SectionComponent, SectionProperties } from '../src/engine/types.ts';
 
 let failures = 0;
@@ -191,6 +192,127 @@ function mkComp(geometry: SectionComponent['geometry'], type: SectionComponent['
   const t2 = 2 * r.principalAngle * Math.PI / 180;
   const Iuv = (r.Ix - r.Iy) / 2 * Math.sin(t2) + r.Ixy * Math.cos(t2);
   checkTrue('L-section Iuv≈0', Math.abs(Iuv) < 1e-3 * r.Iu, `Iuv=${Iuv}`);
+}
+
+// ─── Test 8: Dynamic CG frame — translation only, properties invariant ─────
+{
+  const a = mkComp({ width: 20, height: 10 });
+  const b = mkComp({ width: 10, height: 10 });
+  a.position = { x: 100, y: 200 };
+  b.position = { x: 140, y: 180 };
+  const original = [a, b];
+  const before = computeSectionProperties(original).props;
+  const centered = centerComponentsAtCG(original);
+  const after = computeSectionProperties(centered).props;
+  check('dynamic CG x=0', after.centroidX, 0, 1e-12, 1e-12);
+  check('dynamic CG y=0', after.centroidY, 0, 1e-12, 1e-12);
+  check('CG translation preserves area', after.area, before.area, 1e-12);
+  check('CG translation preserves Ix', after.Ix, before.Ix, 1e-12);
+  check('CG translation preserves Iy', after.Iy, before.Iy, 1e-12);
+  check('CG translation preserves relative X',
+    centered[1].position.x - centered[0].position.x,
+    original[1].position.x - original[0].position.x,
+    1e-12);
+  check('CG translation preserves relative Y',
+    centered[1].position.y - centered[0].position.y,
+    original[1].position.y - original[0].position.y,
+    1e-12);
+}
+
+// ─── Test 9: Vertical plate 20 t × 300 with rectangular bolt deductions ──
+{
+  const t = 20, L = 300, d = 22, n = 3, p = 80;
+  const plate = mkComp({
+    width: t,
+    height: L,
+    boltDeductions: { enabled: true, diameter: d, count: n, spacing: p, grouped: true },
+  });
+  const assembly = synchronizeBoltDeductions([plate]);
+  const cuts = assembly.filter(c => c.associationKind === 'bolt-deduction');
+  check('deduction count', cuts.length, n);
+  checkTrue('deductions are subtract rectangles t × d', cuts.every(c =>
+    c.type === 'rectangle' && c.operation === 'subtract' && c.parentId === plate.id && c.managedByParent
+    && c.geometry.width === t && c.geometry.height === d));
+  check('deduction spacing', cuts[1].position.y - cuts[0].position.y, p, 1e-12);
+  const props = computeSectionProperties(assembly).props;
+  check('net area = A − n·d·t', props.area, t * L - n * d * t, 1e-12);
+  // Ix about plate centre: gross − Σ(own + parallel-axis) for each deduction.
+  const ixNet = t * L ** 3 / 12 - n * (t * d ** 3 / 12) - 2 * t * d * p ** 2;
+  check('net Ix with deductions', props.Ix, ixNet, 1e-9);
+  check('symmetric deductions CG y', props.centroidY, 0, 1e-12, 1e-12);
+
+  // Grouped deductions follow plate changes and keep stable IDs.
+  const moved = { ...plate, position: { x: 50, y: 10 }, geometry: { ...plate.geometry, width: 25 } };
+  const resync = synchronizeBoltDeductions([moved, ...cuts]).filter(c => c.associationKind === 'bolt-deduction');
+  check('grouped deduction follows plate x', resync[0].position.x, 50, 1e-12);
+  check('grouped deduction width follows thickness', resync[0].geometry.width ?? 0, 25, 1e-12);
+  checkTrue('deduction IDs stable', resync.every((c, i) => c.id === cuts[i].id));
+
+  // Horizontal plate: thickness is height, deductions spaced along x.
+  const flange = mkComp({ width: 300, height: 15, boltDeductions: { enabled: true, diameter: 18, count: 2, spacing: 100, grouped: true } });
+  const fc = synchronizeBoltDeductions([flange]).filter(c => c.associationKind === 'bolt-deduction');
+  checkTrue('horizontal plate deduction is d × t', fc[0].geometry.width === 18 && fc[0].geometry.height === 15);
+  check('horizontal plate spacing along x', fc[1].position.x - fc[0].position.x, 100, 1e-12);
+
+  // Ungrouped: deductions become independent editable shapes.
+  const ungroupedPlate = { ...plate, geometry: { ...plate.geometry, boltDeductions: { ...plate.geometry.boltDeductions!, grouped: false } } };
+  const ung = synchronizeBoltDeductions([ungroupedPlate, ...cuts]);
+  const free = ung.filter(c => c.associationKind === 'bolt-deduction');
+  checkTrue('ungrouped deductions are separate unlocked shapes', free.length === n && free.every(c => !c.managedByParent && !c.locked));
+  const edited = ung.map(c => c.id === free[0].id ? { ...c, position: { x: 0, y: 140 } } : c);
+  const kept = synchronizeBoltDeductions(edited).find(c => c.id === free[0].id)!;
+  check('ungrouped edit is preserved', kept.position.y, 140, 1e-12);
+  const regrouped = synchronizeBoltDeductions(edited.map(c => c.id === plate.id ? plate : c)).find(c => c.id === free[0].id)!;
+  check('regroup snaps back to pattern', regrouped.position.y, -p, 1e-12);
+}
+
+// ─── Test 10: Sequential edge distance + individual spacings ──────────────
+{
+  const t = 12, L = 400, d = 22;
+  const cfg = { enabled: true, diameter: d, count: 4, spacing: 70, grouped: true, edgeDistance: 40, spacings: [70, 90, 110] };
+  const plate = mkComp({ width: t, height: L, boltDeductions: cfg });
+  const ys = (p: SectionComponent) => synchronizeBoltDeductions([p])
+    .filter(c => c.associationKind === 'bolt-deduction').map(c => c.position.y + L / 2);
+  const pos = ys(plate);
+  check('hole 1 at edge distance', pos[0], 40, 1e-12);
+  check('hole 2 = H1 + s1', pos[1], 110, 1e-12);
+  check('hole 3 = H2 + s2', pos[2], 200, 1e-12);
+  check('hole 4 = H3 + s3', pos[3], 310, 1e-12);
+
+  // Chain: changing s1 shifts holes 2..4 by the delta.
+  const chained = ys({ ...plate, geometry: { ...plate.geometry, boltDeductions: withSpacing(cfg, L, 0, 80, 'chain') } });
+  check('chain: hole 2 moves', chained[1], 120, 1e-12);
+  check('chain: hole 4 shifts', chained[3], 320, 1e-12);
+
+  // Independent: only hole 2 moves; holes 1, 3, 4 stay put.
+  const indep = ys({ ...plate, geometry: { ...plate.geometry, boltDeductions: withSpacing(cfg, L, 0, 80, 'independent') } });
+  checkTrue('independent: only hole 2 moves', indep[0] === 40 && Math.abs(indep[1] - 120) < 1e-12 && Math.abs(indep[2] - 200) < 1e-12 && Math.abs(indep[3] - 310) < 1e-12);
+
+  // Edge distance: chain shifts all, independent moves hole 1 only.
+  const edgeChain = ys({ ...plate, geometry: { ...plate.geometry, boltDeductions: withEdgeDistance(cfg, L, 50, 'chain') } });
+  check('edge chain: hole 4 shifts', edgeChain[3], 320, 1e-12);
+  const edgeIndep = ys({ ...plate, geometry: { ...plate.geometry, boltDeductions: withEdgeDistance(cfg, L, 50, 'independent') } });
+  checkTrue('edge independent: only hole 1 moves', edgeIndep[0] === 50 && Math.abs(edgeIndep[1] - 110) < 1e-12 && Math.abs(edgeIndep[3] - 310) < 1e-12);
+
+  // Count: adding a hole appends at the last spacing; removing truncates.
+  const five = withCount(cfg, L, 5);
+  checkTrue('add hole appends last spacing', five.spacings!.length === 4 && five.spacings![3] === 110);
+  checkTrue('remove hole keeps earlier spacings', JSON.stringify(withCount(cfg, L, 2).spacings) === '[70]');
+
+  // Net Ix about plate centroid follows the actual hole positions.
+  const props = computeSectionProperties(synchronizeBoltDeductions([plate])).props;
+  check('irregular pattern net area', props.area, t * L - 4 * d * t, 1e-12);
+  const holeYs = pos.map(y => y - L / 2);
+  const A = t * L - 4 * d * t;
+  const cy = (-d * t * holeYs.reduce((a, y) => a + y, 0)) / A;
+  const IxRaw = t * L ** 3 / 12 - holeYs.reduce((a, y) => a + t * d ** 3 / 12 + t * d * y * y, 0);
+  check('irregular pattern centroid', props.centroidY, cy, 1e-9, 1e-9);
+  check('irregular pattern net Ix', props.Ix, IxRaw - A * cy * cy, 1e-9);
+
+  // Fit checks
+  const bad = mkComp({ width: t, height: L, boltDeductions: { ...cfg, edgeDistance: 5, spacings: [15, 90, 400] } });
+  const issues = deductionPatternIssues(bad).map(i => i.message).join(' | ');
+  checkTrue('fit: start edge, overlap, end edge flagged', /start edge/.test(issues) && /overlaps/.test(issues) && /end edge/.test(issues));
 }
 
 console.log(failures === 0 ? '\nALL CHECKS PASSED' : `\n${failures} CHECKS FAILED`);

@@ -1,7 +1,17 @@
 'use client';
 import React, { useState } from 'react';
 import type { StoreState } from '@/store/useStore';
-import type { LengthUnit } from '@/engine/types';
+import type { ComponentGeometry, LengthUnit, Point, SectionComponent } from '@/engine/types';
+import {
+  DEFAULT_BOLT_DEDUCTIONS,
+  deductionEdgeOffsets,
+  deductionPatternIssues,
+  plateDeductionAxis,
+  resolveDeductionLayout,
+  withCount,
+  withEdgeDistance,
+  withSpacing,
+} from '@/engine/boltDeductions';
 import { fmt, fmtSci } from '@/engine/geometry';
 
 interface Props {
@@ -290,18 +300,43 @@ function PropRow({ label, value, highlight }: { label: string; value: string; hi
 
 function GeometryEditor({ store, comp, onEditCoordinates }: {
   store: StoreState;
-  comp: import('@/engine/types').SectionComponent;
-  onEditCoordinates?: (comp: import('@/engine/types').SectionComponent) => void;
+  comp: SectionComponent;
+  onEditCoordinates?: (comp: SectionComponent) => void;
 }) {
   const g = comp.geometry;
 
-  const update = (geo: Partial<import('@/engine/types').ComponentGeometry>) => {
+  const update = (geo: Partial<ComponentGeometry>) => {
     store.updateComponent(comp.id, { geometry: { ...comp.geometry, ...geo } });
   };
 
-  const updatePos = (pos: Partial<import('@/engine/types').Point>) => {
+  const updatePos = (pos: Partial<Point>) => {
     store.updateComponent(comp.id, { position: { ...comp.position, ...pos } });
   };
+
+  if (comp.associationKind === 'bolt-deduction' && comp.parentId && comp.managedByParent) {
+    const plate = store.project.components.find(component => component.id === comp.parentId);
+    return (
+      <div>
+        <div className="panel-header">▭ {comp.name}</div>
+        <div className="p-3 text-xs space-y-2" style={{ color: 'var(--text-secondary)' }}>
+          <div>This grouped rectangular deduction is driven by <strong>{plate?.name ?? 'its parent plate'}</strong>.</div>
+          <div className="grid grid-cols-2 gap-2 font-mono">
+            <span>Width (plate t)</span><span>{fmt(comp.geometry.width ?? 0)} {store.project.units}</span>
+            <span>Depth (hole d)</span><span>{fmt(comp.geometry.height ?? 0)} {store.project.units}</span>
+            <span>Operation</span><span style={{ color: 'var(--danger)' }}>Subtract</span>
+          </div>
+          <div className="text-[10px]" style={{ color: 'var(--text-muted)' }}>
+            Ungroup from the parent plate to edit this deduction as an independent rectangular shape.
+          </div>
+          {plate && (
+            <button className="btn btn-primary w-full text-xs" onClick={() => store.selectComponent(plate.id)}>
+              Select Parent Plate
+            </button>
+          )}
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div>
@@ -415,6 +450,11 @@ function GeometryEditor({ store, comp, onEditCoordinates }: {
         )}
       </div>
 
+      {/* Rectangular net-section bolt-hole deductions for individual plates */}
+      {comp.type === 'rectangle' && comp.associationKind !== 'bolt-deduction' && (
+        <BoltDeductionEditor comp={comp} store={store} />
+      )}
+
       {/* Operation */}
       <div className="panel-header">Operation</div>
       <div className="p-2 flex gap-2">
@@ -432,6 +472,144 @@ function GeometryEditor({ store, comp, onEditCoordinates }: {
         </button>
       </div>
     </div>
+  );
+}
+
+function BoltDeductionEditor({ store, comp }: { store: StoreState; comp: SectionComponent }) {
+  const config = comp.geometry.boltDeductions;
+  const enabled = config?.enabled ?? false;
+  const grouped = config?.grouped ?? true;
+  const units = store.project.units;
+  const width = comp.geometry.width ?? 0;
+  const height = comp.geometry.height ?? 0;
+  const thickness = Math.min(width, height);
+  const ungroupedChildren = store.project.components.filter(component =>
+    component.parentId === comp.id && component.associationKind === 'bolt-deduction' && !component.managedByParent,
+  ).length;
+  const [mode, setMode] = useState<'chain' | 'independent'>('chain');
+  const setConfig = (updates: Partial<NonNullable<ComponentGeometry['boltDeductions']>>) => {
+    const next = { ...(config ?? DEFAULT_BOLT_DEDUCTIONS), ...updates };
+    store.updateComponent(comp.id, { geometry: { ...comp.geometry, boltDeductions: next } });
+  };
+  const commit = (next: NonNullable<ComponentGeometry['boltDeductions']>) =>
+    store.updateComponent(comp.id, { geometry: { ...comp.geometry, boltDeductions: next } });
+  const { length, alongX } = plateDeductionAxis(comp);
+  const layout = config ? resolveDeductionLayout(config, length) : null;
+  const offsets = layout ? deductionEdgeOffsets(layout) : [];
+  const issues = enabled ? deductionPatternIssues(comp) : [];
+  const valid = issues.length === 0;
+  const badHoles = new Set(issues.map(issue => issue.hole));
+  const startEdge = alongX ? 'left' : 'bottom';
+
+  return (
+    <>
+      <div className="panel-header flex items-center justify-between">
+        <span>Bolt-Hole Deduction</span>
+        <label className="flex items-center gap-1.5 text-[10px] font-normal normal-case cursor-pointer" style={{ color: 'var(--text-secondary)' }}>
+          <input
+            type="checkbox"
+            checked={enabled}
+            disabled={!grouped}
+            onChange={event => setConfig({ enabled: event.target.checked, grouped: true })}
+          />
+          Rectangular deduction
+        </label>
+      </div>
+      {(enabled || !grouped) && config && layout && (
+        <div className="p-2 space-y-2">
+          <fieldset disabled={!grouped} className="space-y-2" style={{ opacity: grouped ? 1 : 0.55 }}>
+            <div className="grid grid-cols-2 gap-2">
+              <NumInput label="Hole Diameter (Depth)" value={config.diameter} onChange={diameter => setConfig({ diameter: Math.max(0, diameter) })} />
+              <NumInput label="Number of Holes" value={layout.count} onChange={count => commit(withCount(config, length, Math.round(count)))} />
+              <div>
+                <label className="text-[10px] font-semibold uppercase mb-0.5 block" style={{ color: 'var(--text-muted)' }}>Width = Plate t</label>
+                <div className="input-field font-mono" style={{ opacity: 0.8 }}>{fmt(thickness)} {units}</div>
+              </div>
+              <div>
+                <label className="text-[10px] font-semibold uppercase mb-0.5 block" style={{ color: 'var(--text-muted)' }}>Plate Length</label>
+                <div className="input-field font-mono" style={{ opacity: 0.8 }}>{fmt(length)} {units}</div>
+              </div>
+            </div>
+
+            <div>
+              <div className="text-[10px] font-semibold uppercase mb-1" style={{ color: 'var(--text-muted)' }}>When a distance changes</div>
+              <div className="flex gap-1">
+                <button
+                  type="button"
+                  className={`btn flex-1 text-[10px] ${mode === 'chain' ? 'btn-primary' : 'btn-ghost'}`}
+                  onClick={() => setMode('chain')}
+                  title="Following holes keep their spacings and shift with the edited hole"
+                >Shift following holes</button>
+                <button
+                  type="button"
+                  className={`btn flex-1 text-[10px] ${mode === 'independent' ? 'btn-primary' : 'btn-ghost'}`}
+                  onClick={() => setMode('independent')}
+                  title="Only the edited hole moves; all other holes keep their positions"
+                >Move this hole only</button>
+              </div>
+            </div>
+
+            <table className="w-full text-[10px]" style={{ color: 'var(--text-secondary)' }}>
+              <thead>
+                <tr style={{ color: 'var(--text-muted)' }}>
+                  <th className="text-left font-semibold py-0.5">Hole</th>
+                  <th className="text-left font-semibold py-0.5">Distance ({units})</th>
+                  <th className="text-right font-semibold py-0.5">From {startEdge} edge</th>
+                </tr>
+              </thead>
+              <tbody>
+                {offsets.map((offset, index) => (
+                  <tr key={index} style={{ color: badHoles.has(index + 1) ? 'var(--danger)' : undefined }}>
+                    <td className="py-0.5 pr-1 whitespace-nowrap">
+                      {index + 1}
+                      <span style={{ color: 'var(--text-muted)' }}>{index === 0 ? ' ← edge' : ` ← H${index}`}</span>
+                    </td>
+                    <td className="py-0.5 pr-1">
+                      <input
+                        type="number"
+                        step="any"
+                        className="input-field"
+                        aria-label={index === 0 ? 'First hole edge distance' : `Spacing of hole ${index + 1} from hole ${index}`}
+                        value={index === 0 ? layout.edgeDistance : layout.spacings[index - 1]}
+                        onChange={event => {
+                          const value = parseFloat(event.target.value) || 0;
+                          commit(index === 0
+                            ? withEdgeDistance(config, length, value, mode)
+                            : withSpacing(config, length, index - 1, value, mode));
+                        }}
+                      />
+                    </td>
+                    <td className="py-0.5 text-right font-mono">{fmt(offset)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </fieldset>
+          <div className="text-[10px]" style={{ color: 'var(--text-muted)' }}>
+            Plate {startEdge} edge → Hole 1 (edge distance) → Hole 2 (spacing from Hole 1) → Hole 3 (spacing from Hole 2) → …
+            All distances are to hole centres. Each deduction is a {fmt(thickness)} × {fmt(config.diameter)} {units} rectangle (plate t × hole d).
+            Net area deducted: {fmt(layout.count * config.diameter * thickness)} {units}².
+          </div>
+          {grouped && !valid && (
+            <div className="text-[10px] p-2 rounded space-y-0.5" style={{ color: 'var(--danger)', background: 'rgba(239,68,68,0.1)' }}>
+              {issues.map((issue, i) => <div key={i}>{issue.message}</div>)}
+            </div>
+          )}
+          <button
+            className="btn btn-ghost w-full text-xs"
+            onClick={() => setConfig({ grouped: !grouped, enabled: true })}
+            title={grouped ? 'Release the deduction rectangles into separate editable shapes' : 'Regroup deductions with the plate; they snap back to the parametric pattern'}
+          >
+            {grouped ? '⧉ Ungroup into separate shapes' : '⊞ Group with plate'}
+          </button>
+          <div className="text-[10px] text-center" style={{ color: 'var(--text-muted)' }}>
+            {grouped
+              ? 'Grouped: deductions follow the plate size, position, and rotation.'
+              : `Ungrouped: ${ungroupedChildren} associated deduction shape(s) can be edited individually. Regrouping regenerates the pattern.`}
+          </div>
+        </div>
+      )}
+    </>
   );
 }
 

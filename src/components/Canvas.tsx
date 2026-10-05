@@ -8,7 +8,7 @@ interface Props {
   store: StoreState;
   showGrid: boolean;
   viewBox: { x: number; y: number; w: number; h: number };
-  setViewBox: (vb: { x: number; y: number; w: number; h: number }) => void;
+  setViewBox: React.Dispatch<React.SetStateAction<{ x: number; y: number; w: number; h: number }>>;
   dimensionFontScale: number;
 }
 
@@ -64,24 +64,45 @@ export default function Canvas({ store, showGrid, viewBox, setViewBox, dimension
     };
   }, [getViewTransform, viewBox]);
 
-  // Non-passive wheel listener so preventDefault works while zooming
+  // AutoCAD-style cursor-anchored wheel zoom. Work entirely in SVG viewBox
+  // coordinates here (whose Y points down); mixing engineering Y-up values
+  // into viewBox.y was the source of the previous vertical cursor drift.
   useEffect(() => {
     const svg = svgRef.current;
     if (!svg) return;
     const onWheel = (e: WheelEvent) => {
       e.preventDefault();
-      const factor = e.deltaY > 0 ? 1.1 : 0.9;
-      const world = svgToWorld(e.clientX, e.clientY);
-      setViewBox({
-        x: world.x - (world.x - viewBox.x) * factor,
-        y: world.y - (world.y - viewBox.y) * factor,
-        w: viewBox.w * factor,
-        h: viewBox.h * factor,
+      setViewBox(current => {
+        const rect = svg.getBoundingClientRect();
+        if (rect.width <= 0 || rect.height <= 0) return current;
+
+        const scale = Math.min(rect.width / current.w, rect.height / current.h);
+        const offX = (rect.width - current.w * scale) / 2;
+        const offY = (rect.height - current.h * scale) / 2;
+        const cursorX = current.x + (e.clientX - rect.left - offX) / scale;
+        const cursorY = current.y + (e.clientY - rect.top - offY) / scale;
+
+        // Exponential scaling handles both wheel notches and high-resolution
+        // trackpads smoothly. Negative delta (wheel up) zooms in.
+        const wheelDelta = e.deltaMode === WheelEvent.DOM_DELTA_LINE
+          ? e.deltaY * 16
+          : e.deltaMode === WheelEvent.DOM_DELTA_PAGE ? e.deltaY * rect.height : e.deltaY;
+        const requestedFactor = Math.max(0.5, Math.min(2, Math.exp(wheelDelta * 0.0015)));
+        const nextWidth = Math.max(1e-4, Math.min(1e12, current.w * requestedFactor));
+        const factor = nextWidth / current.w;
+        const nextHeight = current.h * factor;
+
+        return {
+          x: cursorX - (cursorX - current.x) * factor,
+          y: cursorY - (cursorY - current.y) * factor,
+          w: nextWidth,
+          h: nextHeight,
+        };
       });
     };
     svg.addEventListener('wheel', onWheel, { passive: false });
     return () => svg.removeEventListener('wheel', onWheel);
-  }, [svgToWorld, viewBox, setViewBox]);
+  }, [setViewBox]);
 
   // ─── Pointer interactions ────────────────────────────────────────────────
   const handlePointerDown = useCallback((e: React.PointerEvent) => {
@@ -472,7 +493,7 @@ function CentroidMarker({ cx, cy, size, principalAngle, showPrincipal, axisLen, 
         fontFamily="Inter, sans-serif"
         fontWeight={600}
       >
-        C.G.
+        C.G. ({Math.abs(cx) < 1e-9 ? '0' : cx.toFixed(2)}, {Math.abs(cy) < 1e-9 ? '0' : cy.toFixed(2)})
       </text>
     </g>
   );

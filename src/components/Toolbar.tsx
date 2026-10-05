@@ -12,7 +12,7 @@ interface ToolbarProps {
   onExportPDF: () => void;
   onExportDXF: () => void;
   onExportExcel: () => void;
-  onImportJSON: () => void;
+  onImportFile: () => void;
   showGrid: boolean;
   onToggleGrid: () => void;
   onFitView: () => void;
@@ -25,7 +25,7 @@ interface ToolbarProps {
 
 export default function Toolbar({ 
   store, onSave, onLoad, 
-  onExportJSON, onExportCSV, onExportPDF, onExportDXF, onExportExcel, onImportJSON,
+  onExportJSON, onExportCSV, onExportPDF, onExportDXF, onExportExcel, onImportFile,
   showGrid, onToggleGrid, onFitView, onOpenSettings, onOpenAbout, hasSection,
   theme, onToggleTheme 
 }: ToolbarProps) {
@@ -86,6 +86,17 @@ export default function Toolbar({
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M8 3H5a2 2 0 00-2 2v3m18 0V5a2 2 0 00-2-2h-3m0 18h3a2 2 0 002-2v-3M3 16v3a2 2 0 002 2h3"/></svg>
         Fit
       </button>
+      <button
+        className={`btn text-xs ${store.project.alignCGToOrigin ? 'btn-primary' : 'btn-ghost'}`}
+        onClick={store.toggleCGOrigin}
+        title={store.project.alignCGToOrigin ? 'CG is locked to global origin — click to release' : 'Move CG to global origin and keep it aligned'}
+        aria-pressed={store.project.alignCGToOrigin ?? false}
+      >
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+          <circle cx="12" cy="12" r="3"/><path d="M12 2v7M12 15v7M2 12h7M15 12h7"/>
+        </svg>
+        CG → 0
+      </button>
 
       <div className="flex-1" />
 
@@ -96,7 +107,7 @@ export default function Toolbar({
         onExportDXF={onExportDXF}
         onExportExcel={onExportExcel}
         onExportCSV={onExportCSV}
-        onImportJSON={onImportJSON}
+        onImportFile={onImportFile}
         disabled={!hasSection}
       />
 

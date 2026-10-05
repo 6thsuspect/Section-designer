@@ -13,6 +13,7 @@ import CustomShapeDialog from '@/components/CustomShapeDialog';
 import AboutDialog from '@/components/AboutDialog';
 import ImportDialog from '@/components/ImportDialog';
 import { downloadJSON, downloadCSV, exportPDF, downloadDXF, exportExcel } from '@/engine/exporters';
+import { computeSectionProperties } from '@/engine/geometry';
 import type { Point, SectionProject, SectionComponent } from '@/engine/types';
 
 const DEFAULT_SETTINGS: AppSettings = {
@@ -173,10 +174,18 @@ export default function Home() {
     exportExcel(store.project, store.properties);
   }, [store.properties, store.project]);
 
-  const handleImportJSON = useCallback((project: SectionProject) => {
+  const handleImportProject = useCallback((project: SectionProject) => {
     store.setProject(project);
-    setTimeout(fitView, 100);
-  }, [store, fitView]);
+    // Fit from the imported geometry directly. Calling fitView here would use
+    // the previous render's properties while React is applying setProject.
+    const p = computeSectionProperties(project.components).props;
+    if (p.area > 0) {
+      const halfW = Math.max(Math.abs(p.xMax), Math.abs(p.xMin), 1) * 1.5;
+      const halfH = Math.max(Math.abs(p.yMax), Math.abs(p.yMin), 1) * 1.5;
+      const size = Math.max(halfW, halfH) * 2;
+      setViewBox({ x: p.centroidX - size / 2, y: -p.centroidY - size / 2, w: size, h: size });
+    }
+  }, [store]);
 
   // Create custom shape from coordinates
   const handleCreateCustomShape = useCallback((name: string, points: Point[]) => {
@@ -296,7 +305,7 @@ export default function Home() {
         onExportPDF={handleExportPDF}
         onExportDXF={handleExportDXF}
         onExportExcel={handleExportExcel}
-        onImportJSON={() => setShowImport(true)}
+        onImportFile={() => setShowImport(true)}
         showGrid={showGrid}
         onToggleGrid={() => setShowGrid(!showGrid)}
         onFitView={fitView}
@@ -451,7 +460,7 @@ export default function Home() {
       {showImport && (
         <ImportDialog
           onClose={() => setShowImport(false)}
-          onImport={handleImportJSON}
+          onImport={handleImportProject}
         />
       )}
     </div>
