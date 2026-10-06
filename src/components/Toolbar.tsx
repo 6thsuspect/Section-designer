@@ -17,6 +17,9 @@ interface ToolbarProps {
   onToggleGrid: () => void;
   osnap: boolean;
   onToggleOsnap: () => void;
+  /** OSNAP Dimensions / Labels (independent of OSNAP). */
+  osnapLabels: boolean;
+  onToggleOsnapLabels: () => void;
   onFitView: () => void;
   onOpenSettings: () => void;
   onOpenAbout: () => void;
@@ -28,7 +31,7 @@ interface ToolbarProps {
 export default function Toolbar({ 
   store, onSave, onLoad, 
   onExportJSON, onExportCSV, onExportPDF, onExportDXF, onExportExcel, onImportFile,
-  showGrid, onToggleGrid, osnap, onToggleOsnap, onFitView, onOpenSettings, onOpenAbout, hasSection,
+  showGrid, onToggleGrid, osnap, onToggleOsnap, osnapLabels, onToggleOsnapLabels, onFitView, onOpenSettings, onOpenAbout, hasSection,
   theme, onToggleTheme 
 }: ToolbarProps) {
   const [logoOk, setLogoOk] = useState(true);
@@ -96,6 +99,20 @@ export default function Toolbar({
           <rect x="7" y="7" width="10" height="10"/><path d="M12 1v4M12 19v4M1 12h4M19 12h4"/>
         </svg>
         OSNAP
+      </button>
+      <button
+        className={`btn text-xs ${osnapLabels ? 'btn-primary' : 'btn-ghost'}`}
+        onClick={onToggleOsnapLabels}
+        title={osnapLabels
+          ? 'OSNAP Dimensions/Labels ON — show snap point names, coordinates and guide distances (Shift+F3). Snapping is controlled separately by OSNAP.'
+          : 'OSNAP Dimensions/Labels OFF — snapping and guide lines still work, text hidden (Shift+F3)'}
+        aria-pressed={osnapLabels}
+        aria-label="Toggle OSNAP dimensions and labels"
+      >
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+          <path d="M3 17h18M3 14v6M21 14v6" /><path d="M7 4h10M12 4v8" />
+        </svg>
+        OSNAP Dims
       </button>
       <button className="btn btn-ghost text-xs" onClick={onFitView} title="Fit View (F)">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M8 3H5a2 2 0 00-2 2v3m18 0V5a2 2 0 00-2-2h-3m0 18h3a2 2 0 002-2v-3M3 16v3a2 2 0 002 2h3"/></svg>

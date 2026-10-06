@@ -58,6 +58,22 @@ export default function Home() {
       return next;
     });
   }, []);
+  // OSNAP Dimensions / Labels — independent of OSNAP itself. Persisted.
+  const [osnapLabels, setOsnapLabelsState] = useState(true);
+  useEffect(() => {
+    try {
+      const saved = window.localStorage.getItem('section-designer:osnap-labels');
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- hydrate client-only preference
+      if (saved !== null) setOsnapLabelsState(saved === '1');
+    } catch { /* storage unavailable */ }
+  }, []);
+  const toggleOsnapLabels = useCallback(() => {
+    setOsnapLabelsState(previous => {
+      const next = !previous;
+      try { window.localStorage.setItem('section-designer:osnap-labels', next ? '1' : '0'); } catch { /* ignore */ }
+      return next;
+    });
+  }, []);
   const [viewBox, setViewBox] = useState({ x: -400, y: -400, w: 800, h: 800 });
   const [bottomCollapsed, setBottomCollapsed] = useState(false);
   const [dialogMode, setDialogMode] = useState<'save' | 'load' | null>(null);
@@ -305,6 +321,12 @@ export default function Home() {
   // Keyboard shortcuts
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
+      if (e.key === 'F3' && e.shiftKey) {
+        // Shift+F3: OSNAP dimensions / labels (snapping unchanged)
+        e.preventDefault();
+        toggleOsnapLabels();
+        return;
+      }
       if (e.key === 'F3') {
         // AutoCAD: F3 toggles running object snaps
         e.preventDefault();
@@ -357,7 +379,7 @@ export default function Home() {
     };
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
-  }, [store, fitView, setOsnap]);
+  }, [store, fitView, setOsnap, toggleOsnapLabels]);
 
   // ─── Panel resizing ──────────────────────────────────────────────────────
   const resizeState = useRef<{ pointerId: number; axis: 'x' | 'y'; start: number; size: number } | null>(null);
@@ -466,6 +488,8 @@ export default function Home() {
         onToggleGrid={() => setShowGrid(!showGrid)}
         osnap={osnap}
         onToggleOsnap={() => setOsnap(o => !o)}
+        osnapLabels={osnapLabels}
+        onToggleOsnapLabels={toggleOsnapLabels}
         onFitView={fitView}
         onOpenSettings={() => setShowSettings(true)}
         onOpenAbout={() => setShowAbout(true)}
@@ -527,6 +551,7 @@ export default function Home() {
               store={store}
               showGrid={showGrid}
               osnap={osnap}
+              osnapLabels={osnapLabels}
               viewBox={viewBox}
               setViewBox={setViewBox}
               dimensionFontScale={settings.dimensionFontScale}

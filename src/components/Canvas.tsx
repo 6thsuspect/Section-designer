@@ -10,7 +10,7 @@ const PICKBOX_PX = 5;
 /** Movement (px) before a press on empty space becomes a selection window. */
 const DRAG_THRESHOLD_PX = 3;
 import { combinedVoids, componentRenderRings } from '@/engine/combine';
-import { findObjectSnap, linkedIds, SNAP_LABELS, type SnapResult } from '@/engine/osnap';
+import { findObjectSnap, linkedIds, OSNAP_LABEL_COLOR, OSNAP_LABEL_HALO, SNAP_LABELS, type SnapResult } from '@/engine/osnap';
 
 /** Snap aperture in screen pixels (AutoCAD APERTURE default ≈ 10). */
 const SNAP_APERTURE_PX = 12;
@@ -31,6 +31,8 @@ interface Props {
   showGrid: boolean;
   /** Object Snap enabled (OSNAP / F3). */
   osnap: boolean;
+  /** Show OSNAP dimensions / labels (independent of snapping). Default true. */
+  osnapLabels?: boolean;
   viewBox: { x: number; y: number; w: number; h: number };
   setViewBox: React.Dispatch<React.SetStateAction<{ x: number; y: number; w: number; h: number }>>;
   dimensionFontScale: number;
@@ -47,7 +49,7 @@ function getGridSize(viewW: number): number {
 
 type SelectionRect = { x0: number; y0: number; x1: number; y1: number; mode: 'window' | 'crossing'; additive: boolean } | null;
 
-export default function Canvas({ store, showGrid, osnap, viewBox, setViewBox, dimensionFontScale, palette: paletteProp }: Props) {
+export default function Canvas({ store, showGrid, osnap, osnapLabels = true, viewBox, setViewBox, dimensionFontScale, palette: paletteProp }: Props) {
   const palette = paletteProp ?? DEFAULT_PALETTE;
   const svgRef = useRef<SVGSVGElement>(null);
   const [isPanning, setIsPanning] = useState(false);
@@ -498,7 +500,7 @@ export default function Canvas({ store, showGrid, osnap, viewBox, setViewBox, di
           )}
           {/* Dynamic object-snap guide lines */}
           {activeGuides && activeGuides.guides.length > 0 && (
-            <GuideLayer guides={activeGuides.guides} px={activeGuides.px} color={palette.guide} halo={palette.background} units={store.project.units} />
+            <GuideLayer guides={activeGuides.guides} px={activeGuides.px} color={palette.guide} units={store.project.units} showLabels={osnapLabels} />
           )}
           {/* Object snap indicator (AutoCAD-style glyph at the snap point) */}
           {snap && dragId && (
@@ -506,29 +508,33 @@ export default function Canvas({ store, showGrid, osnap, viewBox, setViewBox, di
           )}
         </g>
 
-        {/* Snap label (outside the Y flip so text is upright) */}
-        {snap && dragId && (() => {
+        {/* Snap label + snapped-point coordinates (outside the Y flip so text is upright).
+            Hidden by the OSNAP Dimensions/Labels toggle; snapping itself is unaffected. */}
+        {snap && dragId && osnapLabels && (() => {
           const px = snap.px;
+          const fmt = (v: number) => (Math.abs(v) < 5e-10 ? '0' : v.toFixed(2));
+          const text = `${SNAP_LABELS[snap.kind]}  (${fmt(snap.target.x)}, ${fmt(snap.target.y)})`;
           return (
-            <g pointerEvents="none">
+            <g pointerEvents="none" data-testid="osnap-label">
               <rect
                 x={snap.target.x + 14 * px}
                 y={-snap.target.y + 10 * px}
-                width={(SNAP_LABELS[snap.kind].length * 7 + 10) * px}
+                width={(text.length * 7.2 + 10) * px}
                 height={18 * px}
                 rx={3 * px}
-                fill="rgba(15,23,42,0.92)"
-                stroke="#facc15"
+                fill={OSNAP_LABEL_HALO}
+                stroke={OSNAP_LABEL_COLOR}
                 strokeWidth={px}
               />
               <text
                 x={snap.target.x + 19 * px}
                 y={-snap.target.y + 23 * px}
-                fill="#facc15"
+                fill={OSNAP_LABEL_COLOR}
                 fontSize={12 * px}
+                fontWeight={600}
                 fontFamily="JetBrains Mono, monospace"
               >
-                {SNAP_LABELS[snap.kind]}
+                {text}
               </text>
             </g>
           );
@@ -565,6 +571,7 @@ export default function Canvas({ store, showGrid, osnap, viewBox, setViewBox, di
       <div className="absolute bottom-2 left-2 px-2 py-1 rounded text-[10px] font-mono" style={{ background: palette.overlayBg, color: palette.overlayText }}>
         X: {mouseWorld.x.toFixed(1)} &nbsp; Y: {mouseWorld.y.toFixed(1)} &nbsp; {store.project.units}
         &nbsp;·&nbsp;<span style={{ color: osnap ? palette.snap : undefined, opacity: osnap ? 1 : 0.5 }}>OSNAP {osnap ? 'ON' : 'OFF'}</span>
+        &nbsp;·&nbsp;<span style={{ color: osnapLabels ? OSNAP_LABEL_COLOR : undefined, opacity: osnapLabels ? 1 : 0.5, fontWeight: osnapLabels ? 600 : undefined }}>DIMS {osnapLabels ? 'ON' : 'OFF'}</span>
       </div>
 
       {/* Grid size indicator */}
@@ -794,12 +801,13 @@ function SnapMarker({ snap, size, color = '#facc15' }: { snap: SnapResult; size:
  * Alignment guides extend slightly past both points (tracking-line look);
  * perpendicular guides get a right-angle tick and the gap distance.
  */
-function GuideLayer({ guides, px, color, halo, units }: {
+function GuideLayer({ guides, px, color, units, showLabels = true }: {
   guides: Guide[];
   px: number;
   color: string;
-  halo: string;
   units: string;
+  /** OSNAP Dimensions/Labels toggle: lines/markers stay, text is hidden. */
+  showLabels?: boolean;
 }) {
   const sw = 1.1 * px;
   const dash = `${6 * px} ${4 * px}`;
@@ -837,13 +845,14 @@ function GuideLayer({ guides, px, color, halo, units }: {
               stroke={color} strokeWidth={sw * 1.3}
             />
             <circle cx={g.from.x} cy={g.from.y} r={3 * px} fill="none" stroke={color} strokeWidth={sw * 1.2} />
-            <text
+            {showLabels && <text
+              data-osnap-dim
               x={mid.x}
               y={-mid.y}
               transform="scale(1,-1)"
               fontSize={font}
-              fill={color}
-              stroke={halo}
+              fill={OSNAP_LABEL_COLOR}
+              stroke={OSNAP_LABEL_HALO}
               strokeWidth={3 * px}
               paintOrder="stroke"
               textAnchor="middle"
@@ -852,7 +861,7 @@ function GuideLayer({ guides, px, color, halo, units }: {
               fontWeight={600}
             >
               {label}
-            </text>
+            </text>}
           </g>
         );
       })}

@@ -6,6 +6,7 @@ import { combineComponents, uncombineComponent, synchronizeCombinedCutouts, sign
 import { findObjectSnap, componentSnapFeatures } from '../src/engine/osnap.ts';
 import { formatCoordinates } from '../src/engine/coordinateClipboard.ts';
 import { selectByRect, pickComponent } from '../src/engine/selection.ts';
+import { OSNAP_LABEL_COLOR } from '../src/engine/osnap.ts';
 import { guideFeatures, referenceFeatures, findAlignment, computeGuides, hoverSource, translateFeatures, perpendicularFoot } from '../src/engine/guides.ts';
 import { DEFAULT_DOCK_LAYOUT, computeDockZones, hitDockZone, dockPanel, floatPanel, toggleFloat, panelsOnSide, floatingPanels, clampFloatRect, normalizeDockLayout, dockPreviewRect, setSideSize, setPanelOpen } from '../src/engine/dockLayout.ts';
 import { resolveCanvasPalette, normalizeCanvasThemeSettings, editCanvasColor, normalizeHex, DEFAULT_CANVAS_THEME } from '../src/engine/canvasTheme.ts';
@@ -749,6 +750,8 @@ function mkComp(geometry: SectionComponent['geometry'], type: SectionComponent['
     checkTrue('combined box: 8 real edges (no bridge)', bf.segments.length === 8);
   }
 }
+
+checkTrue('OSNAP dimension/label colour is dark red', OSNAP_LABEL_COLOR === '#8b0000');
 
 console.log(failures === 0 ? '\nALL CHECKS PASSED' : `\n${failures} CHECKS FAILED`);
 process.exit(failures === 0 ? 0 : 1);
