@@ -2,7 +2,7 @@
 // Run: node --experimental-strip-types scripts/verify-properties.mts
 import { centerComponentsAtCG, computeSectionProperties, computeComponentTorsion } from '../src/engine/geometry.ts';
 import { synchronizeBoltDeductions, withEdgeDistance, withEdge2Distance, withReference, withSpacing, withCount, deductionPatternIssues, resolveDeductionLayout } from '../src/engine/boltDeductions.ts';
-import { combineComponents, uncombineComponent, synchronizeCombinedCutouts, signedArea } from '../src/engine/combine.ts';
+import { combineComponents, uncombineComponent, synchronizeCombinedCutouts, signedArea, deleteCombinedVoid, deleteCombinedCutout, voidAtPoint } from '../src/engine/combine.ts';
 import { findObjectSnap, componentSnapFeatures } from '../src/engine/osnap.ts';
 import type { SectionComponent, SectionProperties } from '../src/engine/types.ts';
 
@@ -486,6 +486,68 @@ function mkComp(geometry: SectionComponent['geometry'], type: SectionComponent['
       const back = uncombineComponent(nested.components, 'nest');
       checkTrue('nested uncombine restores previous combined state', back.ok && JSON.stringify(back.components) === JSON.stringify([...ov.components, c3]));
     }
+  }
+}
+
+// ─── Test 14: Delete Cutout ───────────────────────────────────────────────
+{
+  const at = (c: SectionComponent, x: number, y: number, id: string): SectionComponent => ({ ...c, id, position: { x, y } });
+  // Ladder: two chords + three rungs → two voids (left and right).
+  const parts = [
+    at(mkComp({ width: 300, height: 20 }), 0, 60, 'topc'),
+    at(mkComp({ width: 300, height: 20 }), 0, -60, 'botc'),
+    at(mkComp({ width: 20, height: 100 }), -140, 0, 'r1'),
+    at(mkComp({ width: 20, height: 100 }), 0, 0, 'r2'),
+    at(mkComp({ width: 20, height: 100 }), 140, 0, 'r3'),
+  ];
+  const hole = at(mkComp({ width: 10, height: 10 }, 'rectangle', 'subtract'), 0, 60, 'hole');
+  const out = combineComponents([...parts, hole], [...parts.map(p => p.id), 'hole'], 'lad');
+  checkTrue('ladder combine ok', out.ok);
+  if (out.ok) {
+    const lad = out.components.find(c => c.id === 'lad')!;
+    check('ladder has 2 voids', lad.geometry.rings!.length - 1, 2);
+    const leftIdx = voidAtPoint(lad, { x: -70, y: 0 });
+    const rightIdx = voidAtPoint(lad, { x: 70, y: 0 });
+    checkTrue('voidAtPoint finds distinct voids', leftIdx >= 0 && rightIdx >= 0 && leftIdx !== rightIdx);
+    checkTrue('voidAtPoint outside void → −1', voidAtPoint(lad, { x: 0, y: 60 }) === -1);
+
+    const voidArea = 120 * 100; // between rungs: 140 − 20 = 120 wide, 100 tall
+    const A0 = computeSectionProperties(out.components).props.area;
+    const del = deleteCombinedVoid(out.components, 'lad', leftIdx);
+    checkTrue('delete void ok', del.ok);
+    if (del.ok) {
+      const lad2 = del.components.find(c => c.id === 'lad')!;
+      check('one void remains', lad2.geometry.rings!.length - 1, 1);
+      const p2 = computeSectionProperties(del.components).props;
+      check('area increases by deleted void', p2.area, A0 + voidArea, 1e-9);
+      check('boundary rebuilt (signed area = outer − remaining void)', Math.abs(signedArea(lad2.geometry.points!)), 300 * 140 - voidArea, 1e-9);
+      checkTrue('outer ring + other void unchanged',
+        JSON.stringify(lad2.geometry.rings![0]) === JSON.stringify(lad.geometry.rings![0])
+        && JSON.stringify(lad2.geometry.rings![1]) === JSON.stringify(lad.geometry.rings![rightIdx + 1]));
+      checkTrue('position/rotation unchanged', lad2.position.x === lad.position.x && lad2.position.y === lad.position.y && lad2.rotation === lad.rotation);
+      checkTrue('remaining void still selectable at its location', voidAtPoint(lad2, { x: 70, y: 0 }) === 0 && voidAtPoint(lad2, { x: -70, y: 0 }) === -1);
+      // Expected properties = solid outer − right void − bolt cut-out, by superposition.
+      const ref = computeSectionProperties([
+        at(mkComp({ width: 300, height: 140 }), 0, 0, 'o'),
+        at(mkComp({ width: 120, height: 100 }, 'rectangle', 'subtract'), 70, 0, 'v'),
+        at(mkComp({ width: 10, height: 10 }, 'rectangle', 'subtract'), 0, 60, 'h'),
+      ]).props;
+      check('after void delete: Ix', p2.Ix, ref.Ix, 1e-9);
+      check('after void delete: Iy', p2.Iy, ref.Iy, 1e-9);
+      check('after void delete: CG x', p2.centroidX, ref.centroidX, 1e-9, 1e-9);
+
+      // Delete the subtractive cut-out.
+      const cutId = del.components.find(c => c.associationKind === 'combined-cutout')!.id;
+      const del2 = deleteCombinedCutout(del.components, cutId);
+      checkTrue('delete cut-out ok', del2.ok && !del2.components.some(c => c.id === cutId));
+      if (del2.ok) check('area increases by cut-out', computeSectionProperties(del2.components).props.area, p2.area + 100, 1e-9);
+
+      // Uncombine still restores original shapes.
+      const un = uncombineComponent(del.components, 'lad');
+      checkTrue('uncombine after delete restores originals', un.ok && JSON.stringify(un.components) === JSON.stringify([...parts, hole]));
+    }
+    checkTrue('invalid void index rejected', !deleteCombinedVoid(out.components, 'lad', 5).ok);
+    checkTrue('non-cutout delete rejected', !deleteCombinedCutout(out.components, 'lad').ok);
   }
 }
 

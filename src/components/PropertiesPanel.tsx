@@ -14,7 +14,8 @@ import {
   withReference,
   withSpacing,
 } from '@/engine/boltDeductions';
-import { fmt, fmtSci } from '@/engine/geometry';
+import { computeComponentProps, fmt, fmtSci } from '@/engine/geometry';
+import { signedArea } from '@/engine/combine';
 
 interface Props {
   store: StoreState;
@@ -325,6 +326,9 @@ function GeometryEditor({ store, comp, onEditCoordinates }: {
           <div className="text-[10px]" style={{ color: 'var(--text-muted)' }}>
             Uncombine the section to edit the original shape (e.g. its bolt-hole deductions).
           </div>
+          <button className="btn btn-danger w-full text-xs" onClick={() => store.deleteCutout({ cutoutId: comp.id })}>
+            🗑 Delete Cutout
+          </button>
           {parent && (
             <button className="btn btn-primary w-full text-xs" onClick={() => store.selectComponent(parent.id)}>
               Select Combined Section
@@ -683,8 +687,11 @@ function BoltDeductionEditor({ store, comp }: { store: StoreState; comp: Section
 function CombinedSectionInfo({ store, comp }: { store: StoreState; comp: SectionComponent }) {
   const [error, setError] = useState<string | null>(null);
   const members = comp.combinedFrom ?? [];
-  const cutouts = store.project.components.filter(c => c.parentId === comp.id && c.associationKind === 'combined-cutout').length;
-  const voids = Math.max(0, (comp.geometry.rings?.length ?? 1) - 1);
+  const cutoutList = store.project.components.filter(c => c.parentId === comp.id && c.associationKind === 'combined-cutout');
+  const cutouts = cutoutList.length;
+  const voidRings = comp.geometry.rings?.slice(1) ?? [];
+  const voids = voidRings.length;
+  const units = store.project.units;
   return (
     <>
       <div className="panel-header">Combined Section</div>
@@ -701,6 +708,41 @@ function CombinedSectionInfo({ store, comp }: { store: StoreState; comp: Section
           ))}
           {members.length > 8 && <li>… {members.length - 8} more</li>}
         </ul>
+        {(voids > 0 || cutouts > 0) && (
+          <div>
+            <div className="text-[10px] font-semibold uppercase mb-1" style={{ color: 'var(--text-muted)' }}>Cut-outs &amp; Voids</div>
+            <div className="space-y-1">
+              {voidRings.map((ring, index) => {
+                const selected = store.selectedVoid?.combinedId === comp.id && store.selectedVoid.index === index;
+                return (
+                  <div key={`void-${index}`} className="flex items-center gap-1 px-1 py-0.5 rounded"
+                    style={{ background: selected ? 'rgba(239,68,68,0.15)' : 'var(--bg-tertiary)', border: selected ? '1px solid var(--danger)' : '1px solid transparent' }}>
+                    <button className="flex-1 text-left text-[10px]" onClick={() => store.selectVoid(comp.id, index)} title="Highlight this void on the canvas">
+                      ◌ Void {index + 1} <span className="font-mono" style={{ color: 'var(--text-muted)' }}>{fmt(Math.abs(signedArea(ring)))} {units}²</span>
+                    </button>
+                    <button className="btn btn-danger text-[10px] px-1.5 py-0.5"
+                      onClick={() => setError(store.deleteCutout({ combinedId: comp.id, index }))}
+                      title="Delete Cutout: fill this void and rebuild the closed boundary">🗑</button>
+                  </div>
+                );
+              })}
+              {cutoutList.map(cutout => (
+                <div key={cutout.id} className="flex items-center gap-1 px-1 py-0.5 rounded" style={{ background: 'var(--bg-tertiary)' }}>
+                  <button className="flex-1 text-left text-[10px] truncate" onClick={() => store.selectComponent(cutout.id)} title={cutout.name}>
+                    ⊖ {cutout.name.replace(`${comp.name} — `, '')}{' '}
+                    <span className="font-mono" style={{ color: 'var(--text-muted)' }}>{fmt(computeComponentProps(cutout).area)} {units}²</span>
+                  </button>
+                  <button className="btn btn-danger text-[10px] px-1.5 py-0.5"
+                    onClick={() => setError(store.deleteCutout({ cutoutId: cutout.id }))}
+                    title="Delete Cutout: remove this subtractive cut-out">🗑</button>
+                </div>
+              ))}
+            </div>
+            <div className="text-[10px] mt-1" style={{ color: 'var(--text-muted)' }}>
+              Click a void on the canvas (or a row) and press Delete, or use 🗑. Uncombine still restores the original shapes.
+            </div>
+          </div>
+        )}
         <button
           className="btn btn-ghost w-full text-xs"
           style={{ border: '1px solid var(--border)' }}

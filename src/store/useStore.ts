@@ -4,7 +4,7 @@ import { v4 as uuid } from 'uuid';
 import type { SectionComponent, SectionProject, SectionProperties, StressInput, CalcTrace, Material, LengthUnit, QAMessage } from '@/engine/types';
 import { centerComponentsAtCG, computeSectionProperties, computeStress } from '@/engine/geometry';
 import { synchronizeBoltDeductions } from '@/engine/boltDeductions';
-import { combineComponents, synchronizeCombinedCutouts, uncombineComponent } from '@/engine/combine';
+import { combineComponents, deleteCombinedCutout, deleteCombinedVoid, synchronizeCombinedCutouts, uncombineComponent } from '@/engine/combine';
 import { validateComponents } from '@/engine/qa';
 
 const defaultMaterial: Material = {
@@ -54,6 +54,11 @@ export interface StoreState {
   project: SectionProject;
   selectedComponentId: string | null;
   selectedIds: string[];
+  /** Selected interior void of a combined section (for Delete Cutout). */
+  selectedVoid: { combinedId: string; index: number } | null;
+  selectVoid: (combinedId: string, index: number) => void;
+  /** Delete a void (index) or subtractive cut-out (component id) of a combined section. */
+  deleteCutout: (target: { combinedId: string; index: number } | { cutoutId: string }) => string | null;
   properties: SectionProperties | null;
   stressResult: { maxCompression: number; maxTension: number; stressAt: (x: number, y: number) => number; neutralAxisAngle: number; trace: CalcTrace } | null;
   calcTrace: CalcTrace | null;
@@ -90,6 +95,7 @@ export function useStore(): StoreState {
   const [project, setProjectState] = useState<SectionProject>(createDefaultProject);
   const [selectedComponentId, setSelectedComponentId] = useState<string | null>(null);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [selectedVoid, setSelectedVoid] = useState<{ combinedId: string; index: number } | null>(null);
   const [properties, setProperties] = useState<SectionProperties | null>(null);
   const [stressResult, setStressResult] = useState<StoreState['stressResult']>(null);
   const [calcTrace, setCalcTrace] = useState<CalcTrace | null>(null);
@@ -295,6 +301,27 @@ export function useStore(): StoreState {
     return null;
   }, [project.components, updateProjectAndRecalc]);
 
+  const selectVoid = useCallback((combinedId: string, index: number) => {
+    setSelectedComponentId(combinedId);
+    setSelectedIds([combinedId]);
+    setSelectedVoid({ combinedId, index });
+  }, []);
+
+  const deleteCutout = useCallback((target: { combinedId: string; index: number } | { cutoutId: string }): string | null => {
+    const outcome = 'cutoutId' in target
+      ? deleteCombinedCutout(project.components, target.cutoutId)
+      : deleteCombinedVoid(project.components, target.combinedId, target.index);
+    if (!outcome.ok) return outcome.error;
+    updateProjectAndRecalc(p => ({ ...p, components: outcome.components }));
+    setSelectedVoid(null);
+    if ('cutoutId' in target) {
+      const parentId = project.components.find(c => c.id === target.cutoutId)?.parentId ?? null;
+      setSelectedComponentId(parentId);
+      setSelectedIds(parentId ? [parentId] : []);
+    }
+    return null;
+  }, [project.components, updateProjectAndRecalc]);
+
   const toggleCGOrigin = useCallback(() => {
     updateProjectAndRecalc(project => ({
       ...project,
@@ -355,6 +382,9 @@ export function useStore(): StoreState {
     project,
     selectedComponentId,
     selectedIds,
+    selectedVoid,
+    selectVoid,
+    deleteCutout,
     properties,
     stressResult,
     calcTrace,
@@ -369,10 +399,12 @@ export function useStore(): StoreState {
     deleteComponents,
     duplicateComponent,
     selectComponent: (id: string | null) => {
+      setSelectedVoid(null);
       setSelectedComponentId(id);
       setSelectedIds(id !== null ? [id] : []);
     },
     selectComponents: (ids: string[]) => {
+      setSelectedVoid(null);
       setSelectedIds(ids);
       setSelectedComponentId(ids.length > 0 ? ids[ids.length - 1] : null);
     },

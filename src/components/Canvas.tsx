@@ -3,7 +3,7 @@ import React, { useRef, useState, useCallback, useEffect } from 'react';
 import type { StoreState } from '@/store/useStore';
 import type { Point, SectionComponent } from '@/engine/types';
 import { computeComponentProps, polygonInsideRect, polygonIntersectsRect } from '@/engine/geometry';
-import { componentRenderRings } from '@/engine/combine';
+import { combinedVoids, componentRenderRings } from '@/engine/combine';
 import { findObjectSnap, linkedIds, SNAP_LABELS, type SnapResult } from '@/engine/osnap';
 
 /** Snap aperture in screen pixels (AutoCAD APERTURE default ≈ 10). */
@@ -245,6 +245,11 @@ export default function Canvas({ store, showGrid, osnap, viewBox, setViewBox, di
         : [...store.selectedIds, id]);
       return;
     }
+    if (comp.associationKind === 'combined-cutout' && comp.managedByParent) {
+      // Cut-outs of a combined section are selectable (for Delete Cutout) but not draggable.
+      store.selectComponent(id);
+      return;
+    }
     if (comp.locked) return;
     if (!store.selectedIds.includes(id)) store.selectComponent(id);
     // One undo entry per drag (moves during the drag skip history)
@@ -311,6 +316,27 @@ export default function Canvas({ store, showGrid, osnap, viewBox, setViewBox, di
               onPointerDown={(e) => startDrag(comp.id, e)}
             />
           ))}
+
+          {/* Interior voids of combined sections: click to select (Delete Cutout) */}
+          {store.project.components.filter(c => c.visible && c.geometry.rings && c.geometry.rings.length > 1).map(comp =>
+            combinedVoids(comp).map((ring, index) => {
+              const selected = store.selectedVoid?.combinedId === comp.id && store.selectedVoid.index === index;
+              return (
+                <path
+                  key={`${comp.id}:void:${index}`}
+                  d={ring.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x} ${p.y}`).join(' ') + ' Z'}
+                  fill={selected ? 'rgba(239,68,68,0.25)' : 'rgba(0,0,0,0)'}
+                  stroke={selected ? '#ef4444' : 'none'}
+                  strokeWidth={viewBox.w * 0.002}
+                  strokeDasharray={selected ? `${viewBox.w * 0.008} ${viewBox.w * 0.004}` : undefined}
+                  style={{ cursor: 'pointer' }}
+                  onPointerDown={e => { e.stopPropagation(); store.selectVoid(comp.id, index); }}
+                >
+                  <title>{`Void ${index + 1} of ${comp.name} — click to select, Delete to remove`}</title>
+                </path>
+              );
+            }),
+          )}
 
           {/* Centroid marker */}
           {store.properties && store.properties.area > 0 && (

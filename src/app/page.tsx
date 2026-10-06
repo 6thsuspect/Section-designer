@@ -247,7 +247,13 @@ export default function Home() {
           case 'backspace':
             if (store.selectedIds.length > 0 && document.activeElement?.tagName !== 'INPUT' && document.activeElement?.tagName !== 'TEXTAREA') {
               e.preventDefault();
-              if (store.selectedIds.length > 1) {
+              const single = store.project.components.find(c => c.id === store.selectedIds[0]);
+              if (store.selectedVoid && store.selectedIds.length === 1 && store.selectedIds[0] === store.selectedVoid.combinedId) {
+                // Delete Cutout: remove the selected void of a combined section
+                store.deleteCutout(store.selectedVoid);
+              } else if (store.selectedIds.length === 1 && single?.associationKind === 'combined-cutout') {
+                store.deleteCutout({ cutoutId: single.id });
+              } else if (store.selectedIds.length > 1) {
                 store.deleteComponents(store.selectedIds);
               } else {
                 store.deleteComponent(store.selectedIds[0]);

@@ -409,3 +409,68 @@ export function synchronizeCombinedCutouts(components: SectionComponent[]): Sect
   }
   return changed ? result : components;
 }
+
+/** Interior voids of a combined section in world coordinates. */
+export function combinedVoids(comp: SectionComponent): Point[][] {
+  const rings = componentRenderRings(comp);
+  return rings ? rings.slice(1) : [];
+}
+
+export type CutoutDeleteOutcome =
+  | { ok: true; components: SectionComponent[] }
+  | { ok: false; error: string };
+
+/**
+ * Delete one interior void of a combined section: the void is filled with
+ * material, the single continuous closed boundary is rebuilt from the
+ * remaining rings, and the outer boundary/other voids are left unchanged.
+ * The Uncombine snapshot is not altered.
+ */
+export function deleteCombinedVoid(
+  components: SectionComponent[],
+  combinedId: string,
+  voidIndex: number,
+): CutoutDeleteOutcome {
+  const combined = components.find(component => component.id === combinedId);
+  const rings = combined?.geometry.rings;
+  if (!combined || !rings || rings.length < 2) {
+    return { ok: false, error: 'This combined section has no interior voids.' };
+  }
+  if (voidIndex < 0 || voidIndex >= rings.length - 1) {
+    return { ok: false, error: `Void ${voidIndex + 1} does not exist.` };
+  }
+  const outer = rings[0];
+  const holes = rings.slice(1).filter((_, index) => index !== voidIndex);
+  const updated: SectionComponent = {
+    ...combined,
+    geometry: {
+      ...combined.geometry,
+      points: keyholeRings(outer, holes),
+      rings: [outer, ...holes],
+    },
+  };
+  return { ok: true, components: components.map(component => component.id === combinedId ? updated : component) };
+}
+
+/** Delete a subtractive cut-out (e.g. bolt-hole deduction) of a combined section. */
+export function deleteCombinedCutout(components: SectionComponent[], cutoutId: string): CutoutDeleteOutcome {
+  const cutout = components.find(component => component.id === cutoutId);
+  if (!cutout || cutout.associationKind !== 'combined-cutout') {
+    return { ok: false, error: 'The selected item is not a cut-out of a combined section.' };
+  }
+  return { ok: true, components: components.filter(component => component.id !== cutoutId) };
+}
+
+/** Index of the void containing `point` (world coordinates), or −1. */
+export function voidAtPoint(comp: SectionComponent, point: Point): number {
+  return combinedVoids(comp).findIndex(ring => {
+    let inside = false;
+    for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+      const a = ring[i];
+      const b = ring[j];
+      if ((a.y > point.y) !== (b.y > point.y)
+        && point.x < ((b.x - a.x) * (point.y - a.y)) / (b.y - a.y) + a.x) inside = !inside;
+    }
+    return inside;
+  });
+}

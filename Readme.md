@@ -100,6 +100,14 @@ calculations.
     uncombined state exactly: every original shape with its id, position,
     rotation, dimensions, material, bolt-hole deductions and other settings.
     Combined sections can be combined again; Uncombine reverts one level.
+-   **Delete Cutout**: click an interior void of a combined section on the
+    canvas (it highlights in red) and press **Delete**, or use 🗑 in the
+    *Cut-outs & Voids* list of the Properties panel. The void is filled, the
+    single closed boundary is rebuilt from the remaining rings, and section
+    properties are recalculated; the outer boundary, other voids, position and
+    rotation are unchanged. Subtractive cut-outs (e.g. bolt-hole deductions)
+    can be selected and deleted the same way. Uncombine still restores the
+    original shapes.
 
 ### Object Snap (OSNAP)
 
