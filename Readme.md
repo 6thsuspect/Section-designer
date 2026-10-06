@@ -80,7 +80,19 @@ calculations.
 -   Section properties are always computed about the centroidal axes,
     regardless of whether the toggle is enabled.
 
-### Canvas Theme (Settings → Canvas Theme)
+### Dockable panels
+
+The **Components** and **Properties** panels are dockable, CAD-style:
+
+- **Drag the tab header** (⠿ title bar) of a panel. Once the pointer moves a few pixels, translucent **docking zones** appear along the **Top, Bottom, Left and Right** edges of the canvas.
+- Hovering a zone **highlights** it and shows a preview of where the panel will land. Release to **dock**; the panel resizes to fill that side (full height for left/right, full canvas width for top/bottom).
+- Release anywhere else to **float** the panel at that position. Floating panels can be moved by their header, resized from the bottom-right corner, and come to the front when clicked; they are kept on-screen when the window resizes.
+- Several panels on the same side stack (vertically on left/right, side-by-side on top/bottom). Drag the edge between a dock and the canvas to resize that side.
+- **Double-click** the header (or use the ⧉ button) to toggle floating ↔ last docked side; ✕ hides the panel (the canvas corner buttons show/hide them again). **Esc** cancels a drag.
+- Panel contents are mounted once and re-parented, so docking/undocking keeps everything intact — active tab, open forms, scroll position and all functionality.
+- The layout (dock sides, sizes, floating positions, visibility) is saved in the browser and restored next session.
+
+## Canvas Theme (Settings → Canvas Theme)
 
 | Theme | Look |
 |---|---|

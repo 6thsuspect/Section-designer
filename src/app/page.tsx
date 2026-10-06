@@ -16,6 +16,12 @@ import { downloadJSON, downloadCSV, exportPDF, downloadDXF, exportExcel } from '
 import { computeSectionProperties } from '@/engine/geometry';
 import type { Point, SectionProject, SectionComponent } from '@/engine/types';
 import { DEFAULT_CANVAS_THEME, normalizeCanvasThemeSettings, resolveCanvasPalette } from '@/engine/canvasTheme';
+import { DockDragLayer, DockFrame, PanelPortal, usePanelNodes, type DockDragHandle } from '@/components/Docking';
+import {
+  DEFAULT_DOCK_LAYOUT, PANEL_IDS, SIZE_LIMITS, clampFloatRect, dockPanel, floatPanel, floatingPanels,
+  normalizeDockLayout, panelsOnSide, setPanelOpen, setSideSize, toggleFloat,
+  type DockLayout, type DockSide, type PanelId, type Rect,
+} from '@/engine/dockLayout';
 
 const DEFAULT_SETTINGS: AppSettings = {
   theme: 'dark',
@@ -29,8 +35,8 @@ const DEFAULT_SETTINGS: AppSettings = {
 const SETTINGS_KEY = 'section-designer-settings';
 
 // Panel resize bounds
-const LEFT_MIN = 180, LEFT_MAX = 420;
-const RIGHT_MIN = 220, RIGHT_MAX = 520;
+const LAYOUT_KEY = 'section-designer:layout';
+const viewportSize = () => ({ w: window.innerWidth, h: window.innerHeight });
 const BOTTOM_MIN = 120, BOTTOM_MAX_RATIO = 0.6;
 
 export default function Home() {
@@ -55,8 +61,12 @@ export default function Home() {
   const [viewBox, setViewBox] = useState({ x: -400, y: -400, w: 800, h: 800 });
   const [bottomCollapsed, setBottomCollapsed] = useState(false);
   const [dialogMode, setDialogMode] = useState<'save' | 'load' | null>(null);
-  const [leftPanelOpen, setLeftPanelOpen] = useState(true);
-  const [rightPanelOpen, setRightPanelOpen] = useState(true);
+  // Dockable panels (Components / Properties)
+  const [layout, setLayout] = useState<DockLayout>(DEFAULT_DOCK_LAYOUT);
+  const [frontPanel, setFrontPanel] = useState<PanelId>('properties');
+  const panelNodes = usePanelNodes(PANEL_IDS);
+  const dockDragRef = useRef<DockDragHandle>(null);
+  const canvasAreaRef = useRef<HTMLDivElement>(null);
   const [showSettings, setShowSettings] = useState(false);
   const [showCustomShape, setShowCustomShape] = useState(false);
   const [showAbout, setShowAbout] = useState(false);
@@ -64,8 +74,6 @@ export default function Home() {
   const [settings, setSettings] = useState<AppSettings>(DEFAULT_SETTINGS);
 
   // Resizable panels
-  const [leftWidth, setLeftWidth] = useState(224);
-  const [rightWidth, setRightWidth] = useState(256);
   const [bottomHeight, setBottomHeight] = useState(280);
   const [isResizing, setIsResizing] = useState(false);
 
@@ -104,6 +112,64 @@ export default function Home() {
       // storage unavailable — non-fatal
     }
   }, [settings]);
+
+  // Load / persist the dock layout (same deferred-load guard as settings)
+  const layoutLoadedRef = useRef(false);
+  useEffect(() => {
+    const t = setTimeout(() => {
+      layoutLoadedRef.current = true;
+      try {
+        const raw = window.localStorage.getItem(LAYOUT_KEY);
+        if (raw) {
+          const loaded = normalizeDockLayout(JSON.parse(raw));
+          for (const id of PANEL_IDS) loaded.panels[id].float = clampFloatRect(loaded.panels[id].float, viewportSize());
+          setLayout(loaded);
+        }
+      } catch { /* ignore malformed layout */ }
+    }, 0);
+    return () => clearTimeout(t);
+  }, []);
+  useEffect(() => {
+    if (!layoutLoadedRef.current) return;
+    try { window.localStorage.setItem(LAYOUT_KEY, JSON.stringify(layout)); } catch { /* non-fatal */ }
+  }, [layout]);
+
+  // Keep floating panels on-screen when the window is resized
+  useEffect(() => {
+    const onResize = () => setLayout(l => {
+      let next = l;
+      for (const id of floatingPanels(l)) {
+        const r = clampFloatRect(l.panels[id].float, viewportSize());
+        const f = l.panels[id].float;
+        if (r.x !== f.x || r.y !== f.y || r.w !== f.w || r.h !== f.h) {
+          next = { ...next, panels: { ...next.panels, [id]: { ...next.panels[id], float: r } } };
+        }
+      }
+      return next;
+    });
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
+  }, []);
+
+  const handleDock = useCallback((id: PanelId, side: DockSide) => setLayout(l => dockPanel(l, id, side)), []);
+  const handleFloat = useCallback((id: PanelId, rect: Rect) => {
+    setLayout(l => floatPanel(l, id, rect, viewportSize()));
+    setFrontPanel(id);
+  }, []);
+  const handleToggleFloat = useCallback((id: PanelId) => {
+    setLayout(l => toggleFloat(l, id, viewportSize()));
+    setFrontPanel(id);
+  }, []);
+  const handleClosePanel = useCallback((id: PanelId) => setLayout(l => setPanelOpen(l, id, false)), []);
+  const togglePanelOpen = useCallback((id: PanelId) => setLayout(l => setPanelOpen(l, id, !l.panels[id].open)), []);
+  const handleHeaderPointerDown = useCallback((id: PanelId, e: React.PointerEvent) => {
+    const f = layout.panels[id].float;
+    dockDragRef.current?.begin(id, e, { w: f.w, h: f.h });
+  }, [layout.panels]);
+  const getCanvasRect = useCallback((): Rect | null => {
+    const r = canvasAreaRef.current?.getBoundingClientRect();
+    return r ? { x: r.left, y: r.top, w: r.width, h: r.height } : null;
+  }, []);
 
   // Apply theme
   useEffect(() => {
@@ -332,6 +398,55 @@ export default function Home() {
     el.addEventListener('pointercancel', onUp);
   }, []);
 
+  // Render the panels docked on one side, with a resize handle on the canvas edge
+  const renderDockSide = (side: DockSide) => {
+    const ids = panelsOnSide(layout, side);
+    if (ids.length === 0) return null;
+    const vertical = side === 'left' || side === 'right';
+    const size = layout.sizes[side];
+    const borderSide = { left: 'borderRight', right: 'borderLeft', top: 'borderBottom', bottom: 'borderTop' }[side];
+    const container = (
+      <div
+        data-dock-side={side}
+        className={`shrink-0 flex ${vertical ? 'flex-col' : 'flex-row'} overflow-hidden`}
+        style={{
+          background: 'var(--bg-secondary)',
+          [vertical ? 'width' : 'height']: size,
+          [borderSide]: '1px solid var(--border)',
+        }}
+      >
+        {ids.map((id, i) => (
+          <DockFrame
+            key={id}
+            id={id}
+            node={panelNodes[id]}
+            placement={side}
+            className="flex-1 min-h-0 min-w-0"
+            style={i > 0 ? { [vertical ? 'borderTop' : 'borderLeft']: '1px solid var(--border)' } : undefined}
+            onHeaderPointerDown={handleHeaderPointerDown}
+            onToggleFloat={handleToggleFloat}
+            onClose={handleClosePanel}
+          />
+        ))}
+      </div>
+    );
+    const resizer = (
+      <div
+        className={`panel-resizer ${vertical ? 'panel-resizer-v' : 'panel-resizer-h'}`}
+        onPointerDown={e => beginResize(
+          e, vertical ? 'x' : 'y', size,
+          next => setLayout(l => setSideSize(l, side, next)),
+          SIZE_LIMITS[side].min, SIZE_LIMITS[side].max,
+          side === 'right' || side === 'bottom',
+        )}
+        title="Drag to resize"
+      />
+    );
+    return side === 'left' || side === 'top'
+      ? <>{container}{resizer}</>
+      : <>{resizer}{container}</>;
+  };
+
   const bottomMax = typeof window !== 'undefined' ? Math.max(BOTTOM_MIN, Math.round(window.innerHeight * BOTTOM_MAX_RATIO)) : 560;
 
   return (
@@ -361,64 +476,53 @@ export default function Home() {
 
       {/* Main content */}
       <div className="flex-1 flex overflow-hidden">
-        {/* Left Panel - Components */}
-        {leftPanelOpen && (
-          <>
-            <div className="shrink-0 border-r overflow-hidden flex flex-col" style={{ background: 'var(--bg-secondary)', borderColor: 'var(--border)', width: leftWidth }}>
-              <ComponentsPanel store={store} onOpenCustomShape={() => setShowCustomShape(true)} onEditCoordinates={openEditCoordinates} />
-            </div>
-            {/* Left panel resize handle */}
-            <div
-              className="panel-resizer panel-resizer-v"
-              onPointerDown={e => beginResize(e, 'x', leftWidth, setLeftWidth, LEFT_MIN, LEFT_MAX, false)}
-              title="Drag to resize"
-            />
-          </>
-        )}
+        {renderDockSide('left')}
 
-        {/* Center - Canvas */}
-        <div className="flex-1 flex flex-col overflow-hidden relative">
-          {/* Left toggle button */}
-          <button
-            className="absolute top-2 left-2 z-10 w-8 h-8 rounded flex items-center justify-center transition-colors"
-            style={{ background: 'var(--bg-secondary)', border: '1px solid var(--border)' }}
-            onClick={() => setLeftPanelOpen(!leftPanelOpen)}
-            title={leftPanelOpen ? 'Hide Components Panel' : 'Show Components Panel'}
-          >
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ color: 'var(--text-secondary)' }}>
-              {leftPanelOpen ? (
-                <path d="M11 19l-7-7 7-7M18 19l-7-7 7-7" />
-              ) : (
-                <>
-                  <line x1="3" y1="6" x2="21" y2="6" />
-                  <line x1="3" y1="12" x2="21" y2="12" />
-                  <line x1="3" y1="18" x2="21" y2="18" />
-                </>
-              )}
-            </svg>
-          </button>
+        {/* Center column: top dock, canvas, bottom dock, results panel */}
+        <div className="flex-1 flex flex-col overflow-hidden relative min-w-0">
+          {renderDockSide('top')}
 
-          {/* Right toggle button */}
-          <button
-            className="absolute top-2 right-2 z-10 w-8 h-8 rounded flex items-center justify-center transition-colors"
-            style={{ background: 'var(--bg-secondary)', border: '1px solid var(--border)' }}
-            onClick={() => setRightPanelOpen(!rightPanelOpen)}
-            title={rightPanelOpen ? 'Hide Properties Panel' : 'Show Properties Panel'}
-          >
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ color: 'var(--text-secondary)' }}>
-              {rightPanelOpen ? (
-                <path d="M13 5l7 7-7 7M6 5l7 7-7 7" />
-              ) : (
-                <>
-                  <line x1="3" y1="6" x2="21" y2="6" />
-                  <line x1="3" y1="12" x2="21" y2="12" />
-                  <line x1="3" y1="18" x2="21" y2="18" />
-                </>
-              )}
-            </svg>
-          </button>
+          <div ref={canvasAreaRef} className="flex-1 overflow-hidden relative min-h-0">
+            {/* Components panel toggle */}
+            <button
+              className="absolute top-2 left-2 z-10 w-8 h-8 rounded flex items-center justify-center transition-colors"
+              style={{ background: 'var(--bg-secondary)', border: '1px solid var(--border)' }}
+              onClick={() => togglePanelOpen('components')}
+              title={layout.panels.components.open ? 'Hide Components Panel' : 'Show Components Panel'}
+            >
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ color: 'var(--text-secondary)' }}>
+                {layout.panels.components.open ? (
+                  <path d="M11 19l-7-7 7-7M18 19l-7-7 7-7" />
+                ) : (
+                  <>
+                    <line x1="3" y1="6" x2="21" y2="6" />
+                    <line x1="3" y1="12" x2="21" y2="12" />
+                    <line x1="3" y1="18" x2="21" y2="18" />
+                  </>
+                )}
+              </svg>
+            </button>
 
-          <div className="flex-1 overflow-hidden">
+            {/* Properties panel toggle */}
+            <button
+              className="absolute top-2 right-2 z-10 w-8 h-8 rounded flex items-center justify-center transition-colors"
+              style={{ background: 'var(--bg-secondary)', border: '1px solid var(--border)' }}
+              onClick={() => togglePanelOpen('properties')}
+              title={layout.panels.properties.open ? 'Hide Properties Panel' : 'Show Properties Panel'}
+            >
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ color: 'var(--text-secondary)' }}>
+                {layout.panels.properties.open ? (
+                  <path d="M13 5l7 7-7 7M6 5l7 7-7 7" />
+                ) : (
+                  <>
+                    <line x1="3" y1="6" x2="21" y2="6" />
+                    <line x1="3" y1="12" x2="21" y2="12" />
+                    <line x1="3" y1="18" x2="21" y2="18" />
+                  </>
+                )}
+              </svg>
+            </button>
+
             <Canvas
               store={store}
               showGrid={showGrid}
@@ -429,6 +533,8 @@ export default function Home() {
               palette={canvasPalette}
             />
           </div>
+
+          {renderDockSide('bottom')}
 
           {/* Bottom panel resize handle */}
           {!bottomCollapsed && (
@@ -448,20 +554,42 @@ export default function Home() {
           />
         </div>
 
-        {/* Right panel resize handle */}
-        {rightPanelOpen && (
-          <>
-            <div
-              className="panel-resizer panel-resizer-v"
-              onPointerDown={e => beginResize(e, 'x', rightWidth, setRightWidth, RIGHT_MIN, RIGHT_MAX, true)}
-              title="Drag to resize"
-            />
-            <div className="shrink-0 border-l overflow-hidden flex flex-col" style={{ background: 'var(--bg-secondary)', borderColor: 'var(--border)', width: rightWidth }}>
-              <PropertiesPanel store={store} onEditCoordinates={openEditCoordinates} />
-            </div>
-          </>
-        )}
+        {renderDockSide('right')}
       </div>
+
+      {/* Floating panels */}
+      {floatingPanels(layout).map(id => (
+        <DockFrame
+          key={id}
+          id={id}
+          node={panelNodes[id]}
+          placement="float"
+          floatRect={layout.panels[id].float}
+          zIndex={frontPanel === id ? 32 : 31}
+          onHeaderPointerDown={handleHeaderPointerDown}
+          onToggleFloat={handleToggleFloat}
+          onClose={handleClosePanel}
+          onFloatResize={handleFloat}
+          onFocus={setFrontPanel}
+        />
+      ))}
+
+      {/* Docking zones / drag ghost */}
+      <DockDragLayer
+        ref={dockDragRef}
+        getCanvasRect={getCanvasRect}
+        sideSizes={layout.sizes}
+        onDock={handleDock}
+        onFloat={handleFloat}
+      />
+
+      {/* Panel contents: mounted once, re-parented into whichever frame hosts them */}
+      <PanelPortal node={panelNodes.components}>
+        <ComponentsPanel store={store} onOpenCustomShape={() => setShowCustomShape(true)} onEditCoordinates={openEditCoordinates} />
+      </PanelPortal>
+      <PanelPortal node={panelNodes.properties}>
+        <PropertiesPanel store={store} onEditCoordinates={openEditCoordinates} />
+      </PanelPortal>
 
       {/* Copyright Footer */}
       <div

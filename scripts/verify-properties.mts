@@ -6,6 +6,7 @@ import { combineComponents, uncombineComponent, synchronizeCombinedCutouts, sign
 import { findObjectSnap, componentSnapFeatures } from '../src/engine/osnap.ts';
 import { formatCoordinates } from '../src/engine/coordinateClipboard.ts';
 import { selectByRect, pickComponent } from '../src/engine/selection.ts';
+import { DEFAULT_DOCK_LAYOUT, computeDockZones, hitDockZone, dockPanel, floatPanel, toggleFloat, panelsOnSide, floatingPanels, clampFloatRect, normalizeDockLayout, dockPreviewRect, setSideSize, setPanelOpen } from '../src/engine/dockLayout.ts';
 import { resolveCanvasPalette, normalizeCanvasThemeSettings, editCanvasColor, normalizeHex, DEFAULT_CANVAS_THEME } from '../src/engine/canvasTheme.ts';
 import type { SectionComponent, SectionProperties } from '../src/engine/types.ts';
 
@@ -672,6 +673,39 @@ function mkComp(geometry: SectionComponent['geometry'], type: SectionComponent['
   const rt = normalizeCanvasThemeSettings(JSON.parse(JSON.stringify(edited)));
   checkTrue('settings round-trip through JSON', JSON.stringify(rt) === JSON.stringify(edited));
   checkTrue('normalizeHex rejects junk', normalizeHex('#12345') === null && normalizeHex('a1b2c3') === '#a1b2c3');
+}
+
+// ─── Test 19: dockable panel layout ──────────────────────────────────────
+{
+  const area = { x: 200, y: 50, w: 800, h: 600 };
+  const z = computeDockZones(area);
+  checkTrue('zones at the four canvas edges', hitDockZone(z, { x: 205, y: 300 }) === 'left' && hitDockZone(z, { x: 995, y: 300 }) === 'right'
+    && hitDockZone(z, { x: 600, y: 55 }) === 'top' && hitDockZone(z, { x: 600, y: 645 }) === 'bottom');
+  checkTrue('canvas centre is not a zone (→ float)', hitDockZone(z, { x: 600, y: 350 }) === null);
+  checkTrue('outside canvas is not a zone', hitDockZone(z, { x: 100, y: 300 }) === null);
+  const zs = Object.values(z);
+  const overlap = zs.some((a, i) => zs.some((b, j) => i < j && a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h));
+  checkTrue('zones do not overlap', !overlap);
+  const vp = { w: 1400, h: 900 };
+  let L = dockPanel(DEFAULT_DOCK_LAYOUT, 'properties', 'left');
+  checkTrue('both panels stacked on left in order', JSON.stringify(panelsOnSide(L, 'left')) === '["components","properties"]' && panelsOnSide(L, 'right').length === 0);
+  L = dockPanel(L, 'components', 'bottom');
+  checkTrue('dock to bottom', L.panels.components.dock === 'bottom' && L.panels.components.lastDock === 'bottom');
+  L = floatPanel(L, 'components', { x: 1300, y: 850, w: 300, h: 400 }, vp);
+  checkTrue('float clamped on-screen', L.panels.components.dock === 'float' && L.panels.components.float.x === 1100 && L.panels.components.float.y === 500);
+  checkTrue('floatingPanels lists it', JSON.stringify(floatingPanels(L)) === '["components"]');
+  L = toggleFloat(L, 'components', vp);
+  checkTrue('toggleFloat re-docks to last side', L.panels.components.dock === 'bottom');
+  checkTrue('hidden panel not listed', panelsOnSide(setPanelOpen(L, 'components', false), 'bottom').length === 0);
+  checkTrue('side size clamped', setSideSize(L, 'top', 5).sizes.top === 120 && setSideSize(L, 'left', 9999).sizes.left === 560);
+  const pv = dockPreviewRect(area, 'right', 256);
+  checkTrue('right preview hugs right edge', pv.x + pv.w === area.x + area.w && pv.w === 256 && pv.h === area.h);
+  const tiny = clampFloatRect({ x: -50, y: -50, w: 10, h: 10 }, vp);
+  checkTrue('float min size + origin clamp', tiny.w === 220 && tiny.h === 160 && tiny.x === 0 && tiny.y === 0);
+  const n = normalizeDockLayout({ panels: { components: { dock: 'sideways', open: 'yes' }, properties: { dock: 'float', float: { x: 10, y: 20, w: 50, h: 300 } } }, sizes: { left: 'wide', top: 300 } });
+  checkTrue('layout sanitised', n.panels.components.dock === 'left' && n.panels.components.open === true && n.panels.properties.dock === 'float'
+    && n.panels.properties.float.w === 220 && n.sizes.left === 224 && n.sizes.top === 300);
+  checkTrue('layout JSON round-trip', JSON.stringify(normalizeDockLayout(JSON.parse(JSON.stringify(L)))) === JSON.stringify(L));
 }
 
 console.log(failures === 0 ? '\nALL CHECKS PASSED' : `\n${failures} CHECKS FAILED`);
