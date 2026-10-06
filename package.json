@@ -6,7 +6,8 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint .",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test:engineering": "node --experimental-strip-types --import ./scripts/ts-resolve.mjs scripts/verify-properties.mts"
   },
   "dependencies": {
     "@types/file-saver": "^2.0.7",

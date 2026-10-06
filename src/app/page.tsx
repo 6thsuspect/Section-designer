@@ -34,6 +34,22 @@ const BOTTOM_MIN = 120, BOTTOM_MAX_RATIO = 0.6;
 export default function Home() {
   const store = useStore();
   const [showGrid, setShowGrid] = useState(true);
+  // AutoCAD-style Object Snap (F3). Persisted as a user preference.
+  const [osnap, setOsnapState] = useState(true);
+  useEffect(() => {
+    try {
+      const saved = window.localStorage.getItem('section-designer:osnap');
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- hydrate client-only preference
+      if (saved !== null) setOsnapState(saved === '1');
+    } catch { /* storage unavailable */ }
+  }, []);
+  const setOsnap = useCallback((update: boolean | ((previous: boolean) => boolean)) => {
+    setOsnapState(previous => {
+      const next = typeof update === 'function' ? update(previous) : update;
+      try { window.localStorage.setItem('section-designer:osnap', next ? '1' : '0'); } catch { /* ignore */ }
+      return next;
+    });
+  }, []);
   const [viewBox, setViewBox] = useState({ x: -400, y: -400, w: 800, h: 800 });
   const [bottomCollapsed, setBottomCollapsed] = useState(false);
   const [dialogMode, setDialogMode] = useState<'save' | 'load' | null>(null);
@@ -210,6 +226,12 @@ export default function Home() {
   // Keyboard shortcuts
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
+      if (e.key === 'F3') {
+        // AutoCAD: F3 toggles running object snaps
+        e.preventDefault();
+        setOsnap(o => !o);
+        return;
+      }
       if (e.ctrlKey || e.metaKey) {
         switch (e.key.toLowerCase()) {
           case 'n': e.preventDefault(); store.newProject(); break;
@@ -250,7 +272,7 @@ export default function Home() {
     };
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
-  }, [store, fitView]);
+  }, [store, fitView, setOsnap]);
 
   // ─── Panel resizing ──────────────────────────────────────────────────────
   const resizeState = useRef<{ pointerId: number; axis: 'x' | 'y'; start: number; size: number } | null>(null);
@@ -308,6 +330,8 @@ export default function Home() {
         onImportFile={() => setShowImport(true)}
         showGrid={showGrid}
         onToggleGrid={() => setShowGrid(!showGrid)}
+        osnap={osnap}
+        onToggleOsnap={() => setOsnap(o => !o)}
         onFitView={fitView}
         onOpenSettings={() => setShowSettings(true)}
         onOpenAbout={() => setShowAbout(true)}
@@ -379,6 +403,7 @@ export default function Home() {
             <Canvas
               store={store}
               showGrid={showGrid}
+              osnap={osnap}
               viewBox={viewBox}
               setViewBox={setViewBox}
               dimensionFontScale={settings.dimensionFontScale}

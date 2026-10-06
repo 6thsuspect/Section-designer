@@ -2,6 +2,7 @@
 // Run: node --experimental-strip-types scripts/verify-properties.mts
 import { centerComponentsAtCG, computeSectionProperties, computeComponentTorsion } from '../src/engine/geometry.ts';
 import { synchronizeBoltDeductions, withEdgeDistance, withEdge2Distance, withReference, withSpacing, withCount, deductionPatternIssues, resolveDeductionLayout } from '../src/engine/boltDeductions.ts';
+import { findObjectSnap, componentSnapFeatures } from '../src/engine/osnap.ts';
 import type { SectionComponent, SectionProperties } from '../src/engine/types.ts';
 
 let failures = 0;
@@ -357,6 +358,48 @@ function mkComp(geometry: SectionComponent['geometry'], type: SectionComponent['
   const tight = withEdge2Distance(cfg, L, 5, 'independent');
   checkTrue('Edge-2 < radius flagged', deductionPatternIssues(mkComp({ width: t, height: L, boltDeductions: tight })).some(i => /Edge-2 \(5\) < hole radius/.test(i.message)));
   checkTrue('valid pattern has no issues', deductionPatternIssues(mkComp({ width: t, height: L, boltDeductions: cfg })).length === 0);
+}
+
+// ─── Test 12: Object snap (OSNAP) ─────────────────────────────────────────
+{
+  // A: 200 × 20 flange centred at origin (top face y = 10, corners x = ±100).
+  const A = mkComp({ width: 200, height: 20 });
+  // B: 20 × 100 web; corners at ±10, ±50 about its position.
+  const B = mkComp({ width: 20, height: 100 });
+  const comps = [A, B];
+  const tol = 5;
+
+  // Endpoint: B's bottom-left corner dragged near A's top-left corner (−100, 10).
+  const end = findObjectSnap(B, { x: -90 + 1.5, y: 60 - 2 }, comps, { tolerance: tol });
+  checkTrue('endpoint snap kind', end?.kind === 'endpoint');
+  check('endpoint snap x', end!.position.x, -90, 1e-12);
+  check('endpoint snap y', end!.position.y, 60, 1e-12);
+
+  // Edge: B's bottom face near A's top face away from any feature point.
+  const edge = findObjectSnap(B, { x: 37.3, y: 60 + 3 }, comps, { tolerance: tol });
+  checkTrue('edge snap kind', edge?.kind === 'edge');
+  check('edge snap seats web on flange (y)', edge!.position.y, 60, 1e-12);
+  check('edge snap keeps sliding coordinate (x)', edge!.position.x, 37.3, 1e-12);
+
+  // Midpoint: B's bottom-mid onto A's top-mid (0, 10).
+  const mid = findObjectSnap(B, { x: 1, y: 61 }, comps, { tolerance: tol });
+  checkTrue('midpoint snap', mid?.kind === 'midpoint' && Math.abs(mid.position.x) < 1e-12 && Math.abs(mid.position.y - 60) < 1e-12);
+
+  // Free move outside the aperture.
+  checkTrue('no snap outside aperture', findObjectSnap(B, { x: 37.3, y: 80 }, comps, { tolerance: tol }) === null);
+
+  // Node: centre onto the origin when no object is nearby.
+  const node = findObjectSnap(B, { x: 2, y: -1 }, [B], { tolerance: tol, nodes: [{ x: 0, y: 0 }] });
+  checkTrue('node snap to origin', node?.kind === 'node' && Math.abs(node.position.x) < 1e-12 && Math.abs(node.position.y) < 1e-12);
+
+  // Circle: quadrants offered instead of polygon vertices; centre-to-centre snap.
+  const C = mkComp({ radius: 30 }, 'circle');
+  const features = componentSnapFeatures(C);
+  checkTrue('circle exposes 4 quadrants, no fake endpoints',
+    features.points.filter(f => f.kind === 'quadrant').length === 4 && !features.points.some(f => f.kind === 'endpoint'));
+  const D = { ...mkComp({ radius: 10 }, 'circle'), position: { x: 200, y: 200 } };
+  const cc = findObjectSnap(D, { x: 1, y: 1 }, [C, D], { tolerance: tol });
+  checkTrue('circle centre snap', cc?.kind === 'center' && Math.abs(cc.position.x) < 1e-12);
 }
 
 console.log(failures === 0 ? '\nALL CHECKS PASSED' : `\n${failures} CHECKS FAILED`);

@@ -80,6 +80,19 @@ calculations.
 -   Section properties are always computed about the centroidal axes,
     regardless of whether the toggle is enabled.
 
+### Object Snap (OSNAP)
+
+-   Toggle with the **OSNAP** toolbar button or **F3** (as in AutoCAD). The
+    setting is remembered and shown in the canvas status bar.
+-   While dragging a component with OSNAP on, its endpoints, midpoints, centre
+    and quadrants snap to the nearest **endpoint**, **midpoint**, **centre**,
+    **quadrant**, **edge** (nearest point / face contact) or **node** (global
+    origin) of other visible components, within a 12 px aperture.
+-   An AutoCAD-style marker (□ endpoint, △ midpoint, ○ centre, ◇ quadrant,
+    ⊗ node, ⧖ nearest) and a label appear at the snap point.
+-   Hold **Ctrl/⌘** while dragging to move freely for that drag; with OSNAP
+    off, objects always move freely.
+
 ### Rectangular bolt-hole deductions
 
 Bolt holes are modelled as net-section rectangular reductions (not circular

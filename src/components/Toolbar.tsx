@@ -15,6 +15,8 @@ interface ToolbarProps {
   onImportFile: () => void;
   showGrid: boolean;
   onToggleGrid: () => void;
+  osnap: boolean;
+  onToggleOsnap: () => void;
   onFitView: () => void;
   onOpenSettings: () => void;
   onOpenAbout: () => void;
@@ -26,7 +28,7 @@ interface ToolbarProps {
 export default function Toolbar({ 
   store, onSave, onLoad, 
   onExportJSON, onExportCSV, onExportPDF, onExportDXF, onExportExcel, onImportFile,
-  showGrid, onToggleGrid, onFitView, onOpenSettings, onOpenAbout, hasSection,
+  showGrid, onToggleGrid, osnap, onToggleOsnap, onFitView, onOpenSettings, onOpenAbout, hasSection,
   theme, onToggleTheme 
 }: ToolbarProps) {
   const [logoOk, setLogoOk] = useState(true);
@@ -81,6 +83,19 @@ export default function Toolbar({
       <button className="btn btn-ghost text-xs" onClick={onToggleGrid} title="Toggle Grid (G)">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="3" width="18" height="18"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="3" y1="15" x2="21" y2="15"/><line x1="9" y1="3" x2="9" y2="21"/><line x1="15" y1="3" x2="15" y2="21"/></svg>
         {showGrid ? 'Grid ✓' : 'Grid'}
+      </button>
+      <button
+        className={`btn text-xs ${osnap ? 'btn-primary' : 'btn-ghost'}`}
+        onClick={onToggleOsnap}
+        title={osnap
+          ? 'Object Snap ON — dragged objects snap to endpoints, midpoints, centres, quadrants, nodes and edges (F3 to turn off)'
+          : 'Object Snap OFF — objects move freely (F3 to turn on)'}
+        aria-pressed={osnap}
+      >
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+          <rect x="7" y="7" width="10" height="10"/><path d="M12 1v4M12 19v4M1 12h4M19 12h4"/>
+        </svg>
+        OSNAP
       </button>
       <button className="btn btn-ghost text-xs" onClick={onFitView} title="Fit View (F)">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M8 3H5a2 2 0 00-2 2v3m18 0V5a2 2 0 00-2-2h-3m0 18h3a2 2 0 002-2v-3M3 16v3a2 2 0 002 2h3"/></svg>

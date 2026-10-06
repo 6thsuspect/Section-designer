@@ -3,10 +3,16 @@ import React, { useRef, useState, useCallback, useEffect } from 'react';
 import type { StoreState } from '@/store/useStore';
 import type { Point, SectionComponent } from '@/engine/types';
 import { computeComponentProps, polygonInsideRect, polygonIntersectsRect } from '@/engine/geometry';
+import { findObjectSnap, linkedIds, SNAP_LABELS, type SnapResult } from '@/engine/osnap';
+
+/** Snap aperture in screen pixels (AutoCAD APERTURE default ≈ 10). */
+const SNAP_APERTURE_PX = 12;
 
 interface Props {
   store: StoreState;
   showGrid: boolean;
+  /** Object Snap enabled (OSNAP / F3). */
+  osnap: boolean;
   viewBox: { x: number; y: number; w: number; h: number };
   setViewBox: React.Dispatch<React.SetStateAction<{ x: number; y: number; w: number; h: number }>>;
   dimensionFontScale: number;
@@ -21,13 +27,15 @@ function getGridSize(viewW: number): number {
 
 type SelectionRect = { x0: number; y0: number; x1: number; y1: number; mode: 'window' | 'crossing' } | null;
 
-export default function Canvas({ store, showGrid, viewBox, setViewBox, dimensionFontScale }: Props) {
+export default function Canvas({ store, showGrid, osnap, viewBox, setViewBox, dimensionFontScale }: Props) {
   const svgRef = useRef<SVGSVGElement>(null);
   const [isPanning, setIsPanning] = useState(false);
   const panStartRef = useRef<{ x: number; y: number; vbx: number; vby: number }>({ x: 0, y: 0, vbx: 0, vby: 0 });
   const [dragId, setDragId] = useState<string | null>(null);
   const dragStartRef = useRef<{ x: number; y: number; ox: number; oy: number }>({ x: 0, y: 0, ox: 0, oy: 0 });
   const [mouseWorld, setMouseWorld] = useState<Point>({ x: 0, y: 0 });
+  // Active snap plus world-units-per-pixel at detection time (for glyph sizing).
+  const [snap, setSnap] = useState<(SnapResult & { px: number }) | null>(null);
 
   // Rectangular (AutoCAD-style) selection state
   const [selRect, setSelRect] = useState<SelectionRect>(null);
@@ -143,12 +151,18 @@ export default function Canvas({ store, showGrid, viewBox, setViewBox, dimension
       if (comp && !comp.locked) {
         const dx = world.x - dragStartRef.current.x;
         const dy = world.y - dragStartRef.current.y;
-        store.updateComponent(dragId, {
-          position: {
-            x: dragStartRef.current.ox + dx,
-            y: dragStartRef.current.oy + dy,
-          },
-        }, { history: false });
+        const raw = { x: dragStartRef.current.ox + dx, y: dragStartRef.current.oy + dy };
+        // Ctrl/⌘ while dragging temporarily overrides OSNAP (free move).
+        const px = 1 / getViewTransform().scale;
+        const snapped = osnap && !(e.ctrlKey || e.metaKey)
+          ? findObjectSnap(comp, raw, store.project.components, {
+              tolerance: SNAP_APERTURE_PX * px,
+              excludeIds: linkedIds(comp.id, store.project.components),
+              nodes: [{ x: 0, y: 0 }],
+            })
+          : null;
+        setSnap(snapped ? { ...snapped, px } : null);
+        store.updateComponent(dragId, { position: snapped?.position ?? raw }, { history: false });
       }
       return;
     }
@@ -166,7 +180,7 @@ export default function Canvas({ store, showGrid, viewBox, setViewBox, dimension
         setSelRect(rect);
       }
     }
-  }, [isPanning, dragId, viewBox, svgToWorld, getViewTransform, setViewBox, store]);
+  }, [isPanning, dragId, viewBox, svgToWorld, getViewTransform, setViewBox, store, osnap]);
 
   const finishPointer = useCallback((e: React.PointerEvent) => {
     if (svgRef.current?.hasPointerCapture(e.pointerId)) {
@@ -176,6 +190,7 @@ export default function Canvas({ store, showGrid, viewBox, setViewBox, dimension
 
     if (dragId) {
       setDragId(null);
+      setSnap(null);
     } else if (selStartRef.current) {
       const start = selStartRef.current;
       const rect = selRectRef.current;
@@ -300,7 +315,39 @@ export default function Canvas({ store, showGrid, viewBox, setViewBox, dimension
               strokeWidth={viewBox.w * 0.002}
             />
           )}
+          {/* Object snap indicator (AutoCAD-style glyph at the snap point) */}
+          {snap && dragId && (
+            <SnapMarker snap={snap} size={SNAP_APERTURE_PX * 0.8 * snap.px} />
+          )}
         </g>
+
+        {/* Snap label (outside the Y flip so text is upright) */}
+        {snap && dragId && (() => {
+          const px = snap.px;
+          return (
+            <g pointerEvents="none">
+              <rect
+                x={snap.target.x + 14 * px}
+                y={-snap.target.y + 10 * px}
+                width={(SNAP_LABELS[snap.kind].length * 7 + 10) * px}
+                height={18 * px}
+                rx={3 * px}
+                fill="rgba(15,23,42,0.92)"
+                stroke="#facc15"
+                strokeWidth={px}
+              />
+              <text
+                x={snap.target.x + 19 * px}
+                y={-snap.target.y + 23 * px}
+                fill="#facc15"
+                fontSize={12 * px}
+                fontFamily="JetBrains Mono, monospace"
+              >
+                {SNAP_LABELS[snap.kind]}
+              </text>
+            </g>
+          );
+        })()}
 
         {/* Rectangle selection overlay (drawn in svg screen space, outside the flip) */}
         {selBox && selRect && (
@@ -332,6 +379,7 @@ export default function Canvas({ store, showGrid, viewBox, setViewBox, dimension
       {/* Coordinate display */}
       <div className="absolute bottom-2 left-2 px-2 py-1 rounded text-[10px] font-mono" style={{ background: 'rgba(15,23,42,0.85)', color: 'var(--text-secondary)' }}>
         X: {mouseWorld.x.toFixed(1)} &nbsp; Y: {mouseWorld.y.toFixed(1)} &nbsp; {store.project.units}
+        &nbsp;·&nbsp;<span style={{ color: osnap ? '#facc15' : undefined, opacity: osnap ? 1 : 0.5 }}>OSNAP {osnap ? 'ON' : 'OFF'}</span>
       </div>
 
       {/* Grid size indicator */}
@@ -495,6 +543,52 @@ function CentroidMarker({ cx, cy, size, principalAngle, showPrincipal, axisLen, 
       >
         C.G. ({Math.abs(cx) < 1e-9 ? '0' : cx.toFixed(2)}, {Math.abs(cy) < 1e-9 ? '0' : cy.toFixed(2)})
       </text>
+    </g>
+  );
+}
+
+/** AutoCAD OSNAP marker glyphs: □ endpoint, △ midpoint, ○ centre, ◇ quadrant, ⊗ node, ⧖ nearest. */
+function SnapMarker({ snap, size }: { snap: SnapResult; size: number }) {
+  const { x, y } = snap.target;
+  const h = size * 0.75;
+  const sw = size * 0.16;
+  const color = '#facc15';
+  const common = { fill: 'none', stroke: color, strokeWidth: sw } as const;
+  let glyph: React.ReactNode;
+  switch (snap.kind) {
+    case 'endpoint':
+      glyph = <rect x={x - h} y={y - h} width={2 * h} height={2 * h} {...common} />;
+      break;
+    case 'midpoint':
+      glyph = <polygon points={`${x - h},${y - h * 0.8} ${x + h},${y - h * 0.8} ${x},${y + h}`} {...common} />;
+      break;
+    case 'center':
+      glyph = <circle cx={x} cy={y} r={h} {...common} />;
+      break;
+    case 'quadrant':
+      glyph = <polygon points={`${x},${y + h} ${x + h},${y} ${x},${y - h} ${x - h},${y}`} {...common} />;
+      break;
+    case 'node':
+      glyph = (
+        <>
+          <circle cx={x} cy={y} r={h} {...common} />
+          <path d={`M ${x - h * 0.7} ${y - h * 0.7} L ${x + h * 0.7} ${y + h * 0.7} M ${x - h * 0.7} ${y + h * 0.7} L ${x + h * 0.7} ${y - h * 0.7}`} {...common} />
+        </>
+      );
+      break;
+    default:
+      // Nearest: hourglass
+      glyph = <path d={`M ${x - h} ${y + h} L ${x + h} ${y + h} L ${x - h} ${y - h} L ${x + h} ${y - h} Z`} {...common} />;
+  }
+  return (
+    <g pointerEvents="none">
+      {snap.distance > 1e-9 && (
+        <line
+          x1={snap.source.x} y1={snap.source.y} x2={x} y2={y}
+          stroke={color} strokeWidth={sw * 0.5} strokeDasharray={`${size * 0.3} ${size * 0.2}`} opacity={0.6}
+        />
+      )}
+      {glyph}
     </g>
   );
 }
