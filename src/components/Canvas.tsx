@@ -15,6 +15,10 @@ import { findObjectSnap, linkedIds, SNAP_LABELS, type SnapResult } from '@/engin
 /** Snap aperture in screen pixels (AutoCAD APERTURE default ≈ 10). */
 const SNAP_APERTURE_PX = 12;
 
+import { resolveCanvasPalette, DEFAULT_CANVAS_THEME, type CanvasPalette } from '@/engine/canvasTheme';
+
+const DEFAULT_PALETTE = resolveCanvasPalette(DEFAULT_CANVAS_THEME);
+
 interface Props {
   store: StoreState;
   showGrid: boolean;
@@ -23,6 +27,8 @@ interface Props {
   viewBox: { x: number; y: number; w: number; h: number };
   setViewBox: React.Dispatch<React.SetStateAction<{ x: number; y: number; w: number; h: number }>>;
   dimensionFontScale: number;
+  /** Canvas colour theme (presentation only). */
+  palette?: CanvasPalette;
 }
 
 const GRID_SIZES = [10, 25, 50, 100, 250, 500, 1000];
@@ -34,7 +40,8 @@ function getGridSize(viewW: number): number {
 
 type SelectionRect = { x0: number; y0: number; x1: number; y1: number; mode: 'window' | 'crossing'; additive: boolean } | null;
 
-export default function Canvas({ store, showGrid, osnap, viewBox, setViewBox, dimensionFontScale }: Props) {
+export default function Canvas({ store, showGrid, osnap, viewBox, setViewBox, dimensionFontScale, palette: paletteProp }: Props) {
+  const palette = paletteProp ?? DEFAULT_PALETTE;
   const svgRef = useRef<SVGSVGElement>(null);
   const [isPanning, setIsPanning] = useState(false);
   const panStartRef = useRef<{ x: number; y: number; vbx: number; vby: number }>({ x: 0, y: 0, vbx: 0, vby: 0 });
@@ -303,7 +310,7 @@ export default function Canvas({ store, showGrid, osnap, viewBox, setViewBox, di
   } : null;
 
   return (
-    <div className="relative w-full h-full" style={{ background: '#0c1222' }}>
+    <div className="relative w-full h-full" style={{ background: palette.background, transition: 'background-color 120ms linear' }}>
       <svg
         ref={svgRef}
         className="w-full h-full"
@@ -316,10 +323,10 @@ export default function Canvas({ store, showGrid, osnap, viewBox, setViewBox, di
       >
         <defs>
           <pattern id="grid" width={gridSize} height={gridSize} patternUnits="userSpaceOnUse">
-            <path d={`M ${gridSize} 0 L 0 0 0 ${gridSize}`} fill="none" stroke="rgba(148,163,184,0.07)" strokeWidth={viewBox.w * 0.001} />
+            <path d={`M ${gridSize} 0 L 0 0 0 ${gridSize}`} fill="none" stroke={palette.gridColor} strokeOpacity={palette.gridMinorOpacity} strokeWidth={viewBox.w * 0.001} />
           </pattern>
           <pattern id="grid-major" width={gridSize * 5} height={gridSize * 5} patternUnits="userSpaceOnUse">
-            <path d={`M ${gridSize * 5} 0 L 0 0 0 ${gridSize * 5}`} fill="none" stroke="rgba(148,163,184,0.12)" strokeWidth={viewBox.w * 0.002} />
+            <path d={`M ${gridSize * 5} 0 L 0 0 0 ${gridSize * 5}`} fill="none" stroke={palette.gridColor} strokeOpacity={palette.gridOpacity} strokeWidth={viewBox.w * 0.002} />
           </pattern>
         </defs>
 
@@ -332,8 +339,8 @@ export default function Canvas({ store, showGrid, osnap, viewBox, setViewBox, di
         )}
 
         {/* Axes */}
-        <line x1={viewBox.x} y1={0} x2={viewBox.x + viewBox.w} y2={0} stroke="rgba(239,68,68,0.3)" strokeWidth={viewBox.w * 0.001} />
-        <line x1={0} y1={viewBox.y} x2={0} y2={viewBox.y + viewBox.h} stroke="rgba(34,197,94,0.3)" strokeWidth={viewBox.w * 0.001} />
+        <line x1={viewBox.x} y1={0} x2={viewBox.x + viewBox.w} y2={0} stroke={palette.axisX} strokeWidth={viewBox.w * 0.001} />
+        <line x1={0} y1={viewBox.y} x2={0} y2={viewBox.y + viewBox.h} stroke={palette.axisY} strokeWidth={viewBox.w * 0.001} />
 
         {/* Y-axis flipped: in engineering, Y is up. We use SVG transform to flip. */}
         <g transform="scale(1, -1)">
@@ -347,6 +354,7 @@ export default function Canvas({ store, showGrid, osnap, viewBox, setViewBox, di
               strokeWidth={viewBox.w * 0.002}
               fontScale={dimensionFontScale}
               onPointerDown={(e) => startDrag(comp.id, e)}
+              palette={palette}
             />
           ))}
 
@@ -381,11 +389,12 @@ export default function Canvas({ store, showGrid, osnap, viewBox, setViewBox, di
               showPrincipal={Math.abs(store.properties.Ixy) > 0.01}
               axisLen={viewBox.w * 0.12}
               strokeWidth={viewBox.w * 0.002}
+              palette={palette}
             />
           )}
           {/* Object snap indicator (AutoCAD-style glyph at the snap point) */}
           {snap && dragId && (
-            <SnapMarker snap={snap} size={SNAP_APERTURE_PX * 0.8 * snap.px} />
+            <SnapMarker snap={snap} size={SNAP_APERTURE_PX * 0.8 * snap.px} color={palette.snap} />
           )}
         </g>
 
@@ -445,14 +454,14 @@ export default function Canvas({ store, showGrid, osnap, viewBox, setViewBox, di
       </svg>
 
       {/* Coordinate display */}
-      <div className="absolute bottom-2 left-2 px-2 py-1 rounded text-[10px] font-mono" style={{ background: 'rgba(15,23,42,0.85)', color: 'var(--text-secondary)' }}>
+      <div className="absolute bottom-2 left-2 px-2 py-1 rounded text-[10px] font-mono" style={{ background: palette.overlayBg, color: palette.overlayText }}>
         X: {mouseWorld.x.toFixed(1)} &nbsp; Y: {mouseWorld.y.toFixed(1)} &nbsp; {store.project.units}
-        &nbsp;·&nbsp;<span style={{ color: osnap ? '#facc15' : undefined, opacity: osnap ? 1 : 0.5 }}>OSNAP {osnap ? 'ON' : 'OFF'}</span>
+        &nbsp;·&nbsp;<span style={{ color: osnap ? palette.snap : undefined, opacity: osnap ? 1 : 0.5 }}>OSNAP {osnap ? 'ON' : 'OFF'}</span>
       </div>
 
       {/* Grid size indicator */}
       {showGrid && (
-        <div className="absolute bottom-2 right-2 px-2 py-1 rounded text-[10px] font-mono" style={{ background: 'rgba(15,23,42,0.85)', color: 'var(--text-muted)' }}>
+        <div className="absolute bottom-2 right-2 px-2 py-1 rounded text-[10px] font-mono" style={{ background: palette.overlayBg, color: palette.overlayText, opacity: 0.85 }}>
           Grid: {gridSize} {store.project.units}
         </div>
       )}
@@ -460,7 +469,7 @@ export default function Canvas({ store, showGrid, osnap, viewBox, setViewBox, di
   );
 }
 
-function ComponentRenderer({ comp, selected, preview = false, strokeWidth, fontScale, onPointerDown }: {
+function ComponentRenderer({ comp, selected, preview = false, strokeWidth, fontScale, onPointerDown, palette }: {
   comp: SectionComponent;
   selected: boolean;
   /** Highlighted as part of the in-progress selection window. */
@@ -468,18 +477,19 @@ function ComponentRenderer({ comp, selected, preview = false, strokeWidth, fontS
   strokeWidth: number;
   fontScale: number;
   onPointerDown: (e: React.PointerEvent) => void;
+  palette: CanvasPalette;
 }) {
   const props = computeComponentProps(comp);
   const outline = props.outline;
   const isSubtract = comp.operation === 'subtract';
   const isLocked = comp.locked;
 
-  const fillColor = isSubtract ? 'rgba(239,68,68,0.15)' : 'rgba(59,130,246,0.15)';
+  const fillColor = isSubtract ? palette.subtractFill : palette.addFill;
   const strokeColor = preview && !selected
-    ? '#22d3ee'
+    ? palette.preview
     : selected
-    ? '#fbbf24'
-    : isLocked ? '#f59e0b' : isSubtract ? '#ef4444' : '#3b82f6';
+    ? palette.selected
+    : isLocked ? palette.lockedStroke : isSubtract ? palette.subtractStroke : palette.addStroke;
 
   // For circles and ellipses, render as polygon from outline
   if (outline.length < 2) return null;
@@ -506,7 +516,7 @@ function ComponentRenderer({ comp, selected, preview = false, strokeWidth, fontS
       <path
         d={d}
         fillRule="evenodd"
-        fill={preview && !selected ? 'rgba(34,211,238,0.18)' : fillColor}
+        fill={preview && !selected ? palette.previewFill : fillColor}
         stroke={strokeColor}
         strokeWidth={preview && !selected ? strokeWidth * 1.8 : strokeWidth}
         strokeLinejoin="round"
@@ -516,22 +526,22 @@ function ComponentRenderer({ comp, selected, preview = false, strokeWidth, fontS
           <path
             d={d}
             fill="none"
-            stroke="#fbbf24"
+            stroke={palette.selected}
             strokeWidth={strokeWidth * 0.5}
             strokeDasharray={`${strokeWidth * 4} ${strokeWidth * 2}`}
           />
           {/* Dimension annotations */}
           {/* Width dimension (bottom) */}
           <line x1={minX} y1={minY - dimOffset} x2={maxX} y2={minY - dimOffset}
-            stroke="#fbbf24" strokeWidth={strokeWidth * 0.3} />
+            stroke={palette.selected} strokeWidth={strokeWidth * 0.3} />
           <line x1={minX} y1={minY - dimOffset * 0.6} x2={minX} y2={minY - dimOffset * 1.4}
-            stroke="#fbbf24" strokeWidth={strokeWidth * 0.3} />
+            stroke={palette.selected} strokeWidth={strokeWidth * 0.3} />
           <line x1={maxX} y1={minY - dimOffset * 0.6} x2={maxX} y2={minY - dimOffset * 1.4}
-            stroke="#fbbf24" strokeWidth={strokeWidth * 0.3} />
+            stroke={palette.selected} strokeWidth={strokeWidth * 0.3} />
           <text
             x={(minX + maxX) / 2}
             y={-(minY - dimOffset * 1.6)}
-            fill="#fbbf24"
+            fill={palette.selected}
             fontSize={fontSize}
             textAnchor="middle"
             fontFamily="JetBrains Mono, monospace"
@@ -542,15 +552,15 @@ function ComponentRenderer({ comp, selected, preview = false, strokeWidth, fontS
           </text>
           {/* Height dimension (right) */}
           <line x1={maxX + dimOffset} y1={minY} x2={maxX + dimOffset} y2={maxY}
-            stroke="#fbbf24" strokeWidth={strokeWidth * 0.3} />
+            stroke={palette.selected} strokeWidth={strokeWidth * 0.3} />
           <line x1={maxX + dimOffset * 0.6} y1={minY} x2={maxX + dimOffset * 1.4} y2={minY}
-            stroke="#fbbf24" strokeWidth={strokeWidth * 0.3} />
+            stroke={palette.selected} strokeWidth={strokeWidth * 0.3} />
           <line x1={maxX + dimOffset * 0.6} y1={maxY} x2={maxX + dimOffset * 1.4} y2={maxY}
-            stroke="#fbbf24" strokeWidth={strokeWidth * 0.3} />
+            stroke={palette.selected} strokeWidth={strokeWidth * 0.3} />
           <text
             x={maxX + dimOffset * 1.6}
             y={-((minY + maxY) / 2)}
-            fill="#fbbf24"
+            fill={palette.selected}
             fontSize={fontSize}
             textAnchor="middle"
             fontFamily="JetBrains Mono, monospace"
@@ -565,7 +575,7 @@ function ComponentRenderer({ comp, selected, preview = false, strokeWidth, fontS
   );
 }
 
-function CentroidMarker({ cx, cy, size, principalAngle, showPrincipal, axisLen, strokeWidth }: {
+function CentroidMarker({ cx, cy, size, principalAngle, showPrincipal, axisLen, strokeWidth, palette }: {
   cx: number;
   cy: number;
   size: number;
@@ -573,6 +583,7 @@ function CentroidMarker({ cx, cy, size, principalAngle, showPrincipal, axisLen, 
   showPrincipal: boolean;
   axisLen: number;
   strokeWidth: number;
+  palette: CanvasPalette;
 }) {
   const rad = (principalAngle * Math.PI) / 180;
   const cos = Math.cos(rad);
@@ -581,9 +592,9 @@ function CentroidMarker({ cx, cy, size, principalAngle, showPrincipal, axisLen, 
   return (
     <g>
       {/* Centroid crosshair */}
-      <circle cx={cx} cy={cy} r={size} fill="none" stroke="#fbbf24" strokeWidth={strokeWidth} />
-      <line x1={cx - size * 1.5} y1={cy} x2={cx + size * 1.5} y2={cy} stroke="#fbbf24" strokeWidth={strokeWidth * 0.7} />
-      <line x1={cx} y1={cy - size * 1.5} x2={cx} y2={cy + size * 1.5} stroke="#fbbf24" strokeWidth={strokeWidth * 0.7} />
+      <circle cx={cx} cy={cy} r={size} fill="none" stroke={palette.centroid} strokeWidth={strokeWidth} />
+      <line x1={cx - size * 1.5} y1={cy} x2={cx + size * 1.5} y2={cy} stroke={palette.centroid} strokeWidth={strokeWidth * 0.7} />
+      <line x1={cx} y1={cy - size * 1.5} x2={cx} y2={cy + size * 1.5} stroke={palette.centroid} strokeWidth={strokeWidth * 0.7} />
 
       {/* Principal axes */}
       {showPrincipal && (
@@ -593,7 +604,7 @@ function CentroidMarker({ cx, cy, size, principalAngle, showPrincipal, axisLen, 
             y1={cy - axisLen * sin}
             x2={cx + axisLen * cos}
             y2={cy + axisLen * sin}
-            stroke="#f59e0b"
+            stroke={palette.principal1}
             strokeWidth={strokeWidth * 0.5}
             strokeDasharray={`${strokeWidth * 3} ${strokeWidth * 1.5}`}
           />
@@ -602,7 +613,7 @@ function CentroidMarker({ cx, cy, size, principalAngle, showPrincipal, axisLen, 
             y1={cy - axisLen * cos}
             x2={cx - axisLen * sin}
             y2={cy + axisLen * cos}
-            stroke="#f97316"
+            stroke={palette.principal2}
             strokeWidth={strokeWidth * 0.5}
             strokeDasharray={`${strokeWidth * 3} ${strokeWidth * 1.5}`}
           />
@@ -613,7 +624,7 @@ function CentroidMarker({ cx, cy, size, principalAngle, showPrincipal, axisLen, 
       <text
         x={cx + size * 2}
         y={-cy + size * 2}
-        fill="#fbbf24"
+        fill={palette.centroid}
         fontSize={size * 1.5}
         transform={`scale(1,-1) translate(0, ${-2 * cy})`}
         fontFamily="Inter, sans-serif"
@@ -626,11 +637,10 @@ function CentroidMarker({ cx, cy, size, principalAngle, showPrincipal, axisLen, 
 }
 
 /** AutoCAD OSNAP marker glyphs: □ endpoint, △ midpoint, ○ centre, ◇ quadrant, ⊗ node, ⧖ nearest. */
-function SnapMarker({ snap, size }: { snap: SnapResult; size: number }) {
+function SnapMarker({ snap, size, color = '#facc15' }: { snap: SnapResult; size: number; color?: string }) {
   const { x, y } = snap.target;
   const h = size * 0.75;
   const sw = size * 0.16;
-  const color = '#facc15';
   const common = { fill: 'none', stroke: color, strokeWidth: sw } as const;
   let glyph: React.ReactNode;
   switch (snap.kind) {

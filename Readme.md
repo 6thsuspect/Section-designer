@@ -80,7 +80,21 @@ calculations.
 -   Section properties are always computed about the centroidal axes,
     regardless of whether the toggle is enabled.
 
-### Canvas selection (AutoCAD-style)
+### Canvas Theme (Settings → Canvas Theme)
+
+| Theme | Look |
+|---|---|
+| **Grasshopper Style** | Warm grey `#d4d0c8` canvas, faint black grid, red geometry, green selection |
+| **Dark** (default) | Navy `#0c1222` canvas, slate grid, blue/red geometry, amber selection |
+| **Bright / Light** | Near-white `#f8fafc` canvas, darker grid and stronger strokes for contrast |
+| **Custom** | Your own **Canvas Background Color**, **Grid Line Color** and **Grid Line Opacity** |
+
+- Colour pickers (or hex entry: `#rgb` / `#rrggbb`) and the opacity slider (0–100 %, minor grid lines drawn at 55 % of it) apply instantly. Editing a colour while a preset is active switches to Custom, starting from that preset.
+- With Custom, object, selection, overlay and snap colours automatically switch to a light- or dark-background set based on the chosen background's luminance, so geometry stays legible.
+- Themes are display-only: geometry, section properties and exports are unaffected.
+- The theme and custom colours are saved in the browser (`localStorage`) and restored next session; invalid saved values fall back to defaults. (This also fixes an issue where saved settings were overwritten by defaults on page load.)
+
+## Canvas selection (AutoCAD-style)
 
 | Action | Result |
 |---|---|

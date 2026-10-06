@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useCallback, useEffect, useRef } from 'react';
+import React, { useState, useCallback, useEffect, useRef, useMemo } from 'react';
 import { useStore } from '@/store/useStore';
 import Toolbar from '@/components/Toolbar';
 import ComponentsPanel from '@/components/ComponentsPanel';
@@ -15,12 +15,14 @@ import ImportDialog from '@/components/ImportDialog';
 import { downloadJSON, downloadCSV, exportPDF, downloadDXF, exportExcel } from '@/engine/exporters';
 import { computeSectionProperties } from '@/engine/geometry';
 import type { Point, SectionProject, SectionComponent } from '@/engine/types';
+import { DEFAULT_CANVAS_THEME, normalizeCanvasThemeSettings, resolveCanvasPalette } from '@/engine/canvasTheme';
 
 const DEFAULT_SETTINGS: AppSettings = {
   theme: 'dark',
   fontSize: 'medium',
   dimensionFontScale: 1.5,
   accentColor: '#3b82f6',
+  ...DEFAULT_CANVAS_THEME,
 };
 
 // Local persistence for app settings (theme etc.)
@@ -74,13 +76,17 @@ export default function Home() {
 
   // Load persisted settings once on mount (deferred so the first render
   // matches the server output — same apply-after-mount flow as the theme)
+  // Guards the persist effect so the defaults rendered on first mount never
+  // overwrite the saved settings before they have been loaded.
+  const settingsLoadedRef = useRef(false);
   useEffect(() => {
     const t = setTimeout(() => {
+      settingsLoadedRef.current = true;
       try {
         const raw = window.localStorage.getItem(SETTINGS_KEY);
         if (raw) {
           const parsed = JSON.parse(raw);
-          setSettings({ ...DEFAULT_SETTINGS, ...parsed });
+          setSettings({ ...DEFAULT_SETTINGS, ...parsed, ...normalizeCanvasThemeSettings(parsed) });
         }
       } catch {
         // ignore malformed settings
@@ -91,6 +97,7 @@ export default function Home() {
 
   // Persist settings whenever they change
   useEffect(() => {
+    if (!settingsLoadedRef.current) return;
     try {
       window.localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
     } catch {
@@ -124,6 +131,12 @@ export default function Home() {
     const fontSizes = { small: '12px', medium: '14px', large: '16px' };
     root.style.fontSize = fontSizes[settings.fontSize];
   }, [settings]);
+
+  // Canvas colours (presentation only — never affects geometry)
+  const canvasPalette = useMemo(
+    () => resolveCanvasPalette({ canvasTheme: settings.canvasTheme, canvasCustom: settings.canvasCustom }),
+    [settings.canvasTheme, settings.canvasCustom],
+  );
 
   const toggleTheme = useCallback(() => {
     setSettings(s => ({ ...s, theme: s.theme === 'dark' ? 'light' : 'dark' }));
@@ -413,6 +426,7 @@ export default function Home() {
               viewBox={viewBox}
               setViewBox={setViewBox}
               dimensionFontScale={settings.dimensionFontScale}
+              palette={canvasPalette}
             />
           </div>
 

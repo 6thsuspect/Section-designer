@@ -6,6 +6,7 @@ import { combineComponents, uncombineComponent, synchronizeCombinedCutouts, sign
 import { findObjectSnap, componentSnapFeatures } from '../src/engine/osnap.ts';
 import { formatCoordinates } from '../src/engine/coordinateClipboard.ts';
 import { selectByRect, pickComponent } from '../src/engine/selection.ts';
+import { resolveCanvasPalette, normalizeCanvasThemeSettings, editCanvasColor, normalizeHex, DEFAULT_CANVAS_THEME } from '../src/engine/canvasTheme.ts';
 import type { SectionComponent, SectionProperties } from '../src/engine/types.ts';
 
 let failures = 0;
@@ -651,6 +652,26 @@ function mkComp(geometry: SectionComponent['geometry'], type: SectionComponent['
     checkTrue('click in void does not pick', pickComponent(box.components, { x: 0, y: 0 }, 2) === null);
     checkTrue('window around box selects it', JSON.stringify(selectByRect(box.components, { x0: -101, y0: -151, x1: 101, y1: 151 }, 'window')) === '["bx"]');
   }
+}
+
+// ─── Test 18: canvas themes (presentation only) ───────────────────────────
+{
+  const gh = resolveCanvasPalette({ ...DEFAULT_CANVAS_THEME, canvasTheme: 'grasshopper' });
+  checkTrue('grasshopper bg', gh.background === '#d4d0c8' && gh.isLight);
+  checkTrue('dark is default and matches legacy bg', resolveCanvasPalette(DEFAULT_CANVAS_THEME).background === '#0c1222');
+  checkTrue('light theme is light', resolveCanvasPalette({ ...DEFAULT_CANVAS_THEME, canvasTheme: 'light' }).isLight);
+  const edited = editCanvasColor({ ...DEFAULT_CANVAS_THEME, canvasTheme: 'grasshopper' }, { gridOpacity: 0.5 });
+  checkTrue('editing a preset switches to custom seeded from it',
+    edited.canvasTheme === 'custom' && edited.canvasCustom.background === '#d4d0c8' && edited.canvasCustom.gridOpacity === 0.5);
+  const cp = resolveCanvasPalette({ canvasTheme: 'custom', canvasCustom: { background: '#ffffff', gridColor: '#ff0000', gridOpacity: 0.4 } });
+  checkTrue('custom applies colours + derives minor opacity', cp.background === '#ffffff' && cp.gridColor === '#ff0000' && Math.abs(cp.gridMinorOpacity - 0.22) < 1e-9);
+  checkTrue('custom light bg picks light object palette', cp.isLight && cp.addStroke === '#2563eb');
+  checkTrue('custom dark bg picks dark object palette', !resolveCanvasPalette({ canvasTheme: 'custom', canvasCustom: { background: '#101010', gridColor: '#ffffff', gridOpacity: 0.2 } }).isLight);
+  const bad = normalizeCanvasThemeSettings({ canvasTheme: 'neon', canvasCustom: { background: 'red', gridColor: '#ABC', gridOpacity: 7 } });
+  checkTrue('persisted settings sanitised', bad.canvasTheme === 'dark' && bad.canvasCustom.background === '#0c1222' && bad.canvasCustom.gridColor === '#aabbcc' && bad.canvasCustom.gridOpacity === 1);
+  const rt = normalizeCanvasThemeSettings(JSON.parse(JSON.stringify(edited)));
+  checkTrue('settings round-trip through JSON', JSON.stringify(rt) === JSON.stringify(edited));
+  checkTrue('normalizeHex rejects junk', normalizeHex('#12345') === null && normalizeHex('a1b2c3') === '#a1b2c3');
 }
 
 console.log(failures === 0 ? '\nALL CHECKS PASSED' : `\n${failures} CHECKS FAILED`);
