@@ -7,6 +7,7 @@ import { findObjectSnap, componentSnapFeatures } from '../src/engine/osnap.ts';
 import { formatCoordinates } from '../src/engine/coordinateClipboard.ts';
 import { selectByRect, pickComponent } from '../src/engine/selection.ts';
 import { OSNAP_LABEL_COLOR } from '../src/engine/osnap.ts';
+import { computeCgDimensions, isNearCg } from '../src/engine/cgDimensions.ts';
 import { guideFeatures, referenceFeatures, findAlignment, computeGuides, hoverSource, translateFeatures, perpendicularFoot } from '../src/engine/guides.ts';
 import { DEFAULT_DOCK_LAYOUT, computeDockZones, hitDockZone, dockPanel, floatPanel, toggleFloat, panelsOnSide, floatingPanels, clampFloatRect, normalizeDockLayout, dockPreviewRect, setSideSize, setPanelOpen } from '../src/engine/dockLayout.ts';
 import { resolveCanvasPalette, normalizeCanvasThemeSettings, editCanvasColor, normalizeHex, DEFAULT_CANVAS_THEME } from '../src/engine/canvasTheme.ts';
@@ -16,7 +17,7 @@ let failures = 0;
 function check(name: string, actual: number, expected: number, relTol = 1e-6, absTol = 1e-9) {
   const diff = Math.abs(actual - expected);
   const tol = Math.max(absTol, Math.abs(expected) * relTol);
-  if (diff > tol) {
+  if (!(diff <= tol)) { // NaN-safe: a NaN result must fail
     console.error(`FAIL ${name}: actual=${actual} expected=${expected} (diff=${diff} > tol=${tol})`);
     failures++;
   } else {
@@ -752,6 +753,46 @@ function mkComp(geometry: SectionComponent['geometry'], type: SectionComponent['
 }
 
 checkTrue('OSNAP dimension/label colour is dark red', OSNAP_LABEL_COLOR === '#8b0000');
+
+// ─── Test 21: CG → extreme-edge dimensions ───────────────────────────────
+{
+  const at = (c: SectionComponent, x: number, y: number, id: string): SectionComponent => ({ ...c, id, position: { x, y } });
+  // T-section: flange 200×20 centred at (0,90), web 20×160 centred at (0,0) → x −100…100, y −80…100
+  const T = [at(mkComp({ width: 200, height: 20 }), 0, 90, 'f'), at(mkComp({ width: 20, height: 160 }), 0, 0, 'w')];
+  const p = computeSectionProperties(T).props;
+  const cg = { x: p.centroidX, y: p.centroidY };
+  const d = computeCgDimensions(T, cg)!;
+  check('CG→left = 100', d.left.distance, 100);
+  check('CG→right = 100', d.right.distance, 100);
+  check('CG→top = 100 − ȳ', d.top.distance, 100 - cg.y);
+  check('CG→bottom = ȳ + 80', d.bottom.distance, cg.y + 80);
+  checkTrue('left+right = overall width', Math.abs(d.left.distance + d.right.distance - d.width) < 1e-9 && Math.abs(d.width - 200) < 1e-9);
+  checkTrue('top+bottom = overall height', Math.abs(d.top.distance + d.bottom.distance - d.height) < 1e-9 && Math.abs(d.height - 180) < 1e-9);
+  // Extension points: top edge spans CG x → point level with CG; left extreme is the flange tip (CG line misses it) → nearest vertex
+  checkTrue('top extension starts above CG', Math.abs(d.top.point.x - cg.x) < 1e-9 && Math.abs(d.top.point.y - 100) < 1e-9);
+  checkTrue('left extension from nearest flange corner', Math.abs(d.left.point.x + 100) < 1e-9 && Math.abs(d.left.point.y - 80) < 1e-9);
+  // Subtractions and hidden shapes do not change the envelope
+  const hole = { ...at(mkComp({ width: 10, height: 10 }), 0, 0, 'h'), operation: 'subtract' as const };
+  const ghost = { ...at(mkComp({ width: 50, height: 50 }), 500, 500, 'g'), visible: false };
+  const d2 = computeCgDimensions([...T, hole, ghost], cg)!;
+  checkTrue('subtract/hidden ignored', Math.abs(d2.width - 200) < 1e-9 && Math.abs(d2.height - 180) < 1e-9);
+  // Two separate plates with a gap: extension must not land in the gap
+  const gap = [at(mkComp({ width: 40, height: 10 }), -60, 0, 'a'), at(mkComp({ width: 40, height: 10 }), 60, 0, 'b')];
+  const dg = computeCgDimensions(gap, { x: 0, y: 0 })!;
+  checkTrue('no extension point in the gap between plates', Math.abs(Math.abs(dg.top.point.x) - 40) < 1e-9);
+  checkTrue('empty section → null', computeCgDimensions([], { x: 0, y: 0 }) === null);
+  checkTrue('hover aperture', isNearCg({ x: 3, y: 4 }, { x: 0, y: 0 }, 5) && !isNearCg({ x: 3, y: 4.1 }, { x: 0, y: 0 }, 5));
+  // Combined section: true rings
+  const plates = [
+    at(mkComp({ width: 200, height: 20 }), 0, 140, 'p1'), at(mkComp({ width: 200, height: 20 }), 0, -140, 'p2'),
+    at(mkComp({ width: 20, height: 260 }), -90, 0, 'p3'), at(mkComp({ width: 20, height: 260 }), 90, 0, 'p4'),
+  ];
+  const box = combineComponents(plates, plates.map(q => q.id), 'bx');
+  if (box.ok) {
+    const db = computeCgDimensions(box.components, { x: 0, y: 0 })!;
+    checkTrue('combined box CG dims 100/100/150/150', [db.left.distance, db.right.distance, db.top.distance, db.bottom.distance].every((v, i) => Math.abs(v - [100, 100, 150, 150][i]) < 1e-6));
+  }
+}
 
 console.log(failures === 0 ? '\nALL CHECKS PASSED' : `\n${failures} CHECKS FAILED`);
 process.exit(failures === 0 ? 0 : 1);

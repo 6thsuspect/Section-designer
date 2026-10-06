@@ -61,8 +61,6 @@ export const SNAP_LABELS: Record<SnapKind, string> = {
 
 /** OSNAP dimension / label text colour (dark red). */
 export const OSNAP_LABEL_COLOR = '#8b0000';
-/** Light halo behind OSNAP labels so dark red stays legible on any canvas theme. */
-export const OSNAP_LABEL_HALO = 'rgba(255,255,255,0.92)';
 
 const CURVED = new Set<SectionComponent['type']>(['circle', 'hollow-circle', 'ellipse']);
 

@@ -80,7 +80,17 @@ calculations.
 -   Section properties are always computed about the centroidal axes,
     regardless of whether the toggle is enabled.
 
-### Object snap guide lines (tracking)
+### CG dimensions (hover)
+
+Hover the **C.G.** marker to show its dimensions to the extreme edges of the section:
+
+- A horizontal dimension line through the CG to the extreme **left** and **right** edges, and a vertical one to the extreme **top** and **bottom** edges, with arrowheads and the four distances (e.g. `100.00 | 100.00 | 50.00 | 130.00`, units shown beside the CG). Left + right = overall width, top + bottom = overall height.
+- Dashed extension lines run from the actual extreme edge to the dimension line: from the point level with the CG when a straight extreme edge spans it, otherwise from the extreme corner nearest to the CG's line (never across a gap between separate plates).
+- Extremes come from the visible material only (subtracted shapes, voids and hidden shapes are ignored; combined sections use their true outer rings).
+- Text is dark red (`#8b0000`) on a transparent background; lines use the theme's CG colour. Sizes are in screen pixels, so the dimensions stay crisp and anchored to the CG while zooming and panning, and they update live as the section geometry changes.
+- They disappear when the cursor leaves the CG (12 px aperture) or the canvas, and while dragging, panning or window-selecting.
+
+## Object snap guide lines (tracking)
 
 With **OSNAP on (F3)**, dashed guide lines help align objects, AutoCAD object-snap-tracking style:
 
@@ -89,7 +99,7 @@ With **OSNAP on (F3)**, dashed guide lines help align objects, AutoCAD object-sn
   - **Perpendicular guides** (⊥): the shortest perpendicular from the moving object to the nearest face/edge of up to three neighbouring objects within ~220 px (or from a neighbour's corner to the moving face), with a right-angle tick and the gap distance in project units.
   - A precise OSNAP point snap (endpoint, midpoint, …) still takes priority; guides are then drawn for the snapped position. Hold **Alt** for a free move with no snapping or guides.
 - **When a shape is selected**, move the cursor near it: guides are drawn from the selected object's point under the cursor (a corner/midpoint within 14 px, otherwise the nearest point on its edge) to aligned points and to the nearest perpendicular faces of other objects, updating as the cursor moves.
-- **OSNAP Dims** toolbar button (**Shift+F3**) toggles the OSNAP dimensions/labels — the snap-point name with its coordinates (e.g. `Endpoint (50.00, 10.00)`), alignment-guide distances and perpendicular face/edge gaps — drawn in **dark red** (`#8b0000`) on a light halo so they stay legible on every canvas theme. Turning it off hides only the text: snapping, snap glyphs and dashed guide lines keep working. It is independent of **OSNAP (F3)** and both settings are remembered between sessions; the status bar shows `OSNAP ON/OFF · DIMS ON/OFF`.
+- **OSNAP Dims** toolbar button (**Shift+F3**) toggles the OSNAP dimensions/labels — the snap-point name with its coordinates (e.g. `Endpoint (50.00, 10.00)`), alignment-guide distances and perpendicular face/edge gaps — drawn as **dark red** (`#8b0000`) text on a clean, transparent background (no highlight box or halo). Turning it off hides only the text: snapping, snap glyphs and dashed guide lines keep working. It is independent of **OSNAP (F3)** and both settings are remembered between sessions; the status bar shows `OSNAP ON/OFF · DIMS ON/OFF`.
 - Guides disappear when the cursor moves away from the selected object, when no reference is in range, on deselection, when OSNAP is off, and when the drag ends.
 - Combined sections use their true outer/void rings (no phantom guides from keyhole bridges). Guide colours follow the canvas theme.
 

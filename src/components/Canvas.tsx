@@ -10,7 +10,7 @@ const PICKBOX_PX = 5;
 /** Movement (px) before a press on empty space becomes a selection window. */
 const DRAG_THRESHOLD_PX = 3;
 import { combinedVoids, componentRenderRings } from '@/engine/combine';
-import { findObjectSnap, linkedIds, OSNAP_LABEL_COLOR, OSNAP_LABEL_HALO, SNAP_LABELS, type SnapResult } from '@/engine/osnap';
+import { findObjectSnap, linkedIds, OSNAP_LABEL_COLOR, SNAP_LABELS, type SnapResult } from '@/engine/osnap';
 
 /** Snap aperture in screen pixels (AutoCAD APERTURE default ≈ 10). */
 const SNAP_APERTURE_PX = 12;
@@ -20,7 +20,10 @@ const GUIDE_ALIGN_PX = 8;
 const GUIDE_PERP_PX = 220;
 /** How close the cursor must be to the selected object to show hover guides (px). */
 const GUIDE_HOVER_APERTURE_PX = 14;
+/** Hover aperture around the CG marker that reveals the CG dimensions (px). */
+const CG_HOVER_PX = 12;
 
+import { computeCgDimensions, isNearCg, type CgDimensions } from '@/engine/cgDimensions';
 import { computeGuides, findAlignment, guideFeatures, hoverSource, referenceFeatures, translateFeatures, type Guide, type GuideFeatures, type RefFeatures } from '@/engine/guides';
 import { resolveCanvasPalette, DEFAULT_CANVAS_THEME, type CanvasPalette } from '@/engine/canvasTheme';
 
@@ -64,6 +67,20 @@ export default function Canvas({ store, showGrid, osnap, osnapLabels = true, vie
   const [hoverGuides, setHoverGuides] = useState<{ guides: Guide[]; px: number; key: string } | null>(null);
   // Geometry captured at drag start: moving features (at start position) + static references.
   const guideDragRef = useRef<{ base: GuideFeatures; refs: RefFeatures[] } | null>(null);
+
+  // Canvas element size (for zoom-aware sizes during render) + pointer presence.
+  const [svgSize, setSvgSize] = useState<{ w: number; h: number }>({ w: 0, h: 0 });
+  const [pointerInside, setPointerInside] = useState(false);
+  useEffect(() => {
+    const svg = svgRef.current;
+    if (!svg || typeof ResizeObserver === 'undefined') return;
+    const ro = new ResizeObserver(entries => {
+      const r = entries[0]?.contentRect;
+      if (r) setSvgSize({ w: r.width, h: r.height });
+    });
+    ro.observe(svg);
+    return () => ro.disconnect();
+  }, []);
 
   // Rectangular (AutoCAD-style) selection state
   const [selRect, setSelRect] = useState<SelectionRect>(null);
@@ -178,6 +195,7 @@ export default function Canvas({ store, showGrid, osnap, osnapLabels = true, vie
   const handlePointerMove = useCallback((e: React.PointerEvent) => {
     const world = svgToWorld(e.clientX, e.clientY);
     setMouseWorld(world);
+    setPointerInside(true);
 
     if (isPanning) {
       const { scale } = getViewTransform();
@@ -393,6 +411,22 @@ export default function Canvas({ store, showGrid, osnap, osnapLabels = true, vie
 
   const gridSize = getGridSize(viewBox.w);
 
+  // World units per screen pixel for the current zoom (derived from viewBox +
+  // element size, so overlays track wheel zoom / pan without a mouse move).
+  const pxNow = svgSize.w > 0 && svgSize.h > 0
+    ? 1 / Math.min(svgSize.w / viewBox.w, svgSize.h / viewBox.h)
+    : 1;
+  const cgPoint = store.properties && store.properties.area > 0
+    ? { x: store.properties.centroidX, y: store.properties.centroidY }
+    : null;
+  const cgHover = !!cgPoint && pointerInside && !dragId && !isPanning && !selRect
+    && isNearCg(mouseWorld, cgPoint, Math.max(CG_HOVER_PX * pxNow, viewBox.w * 0.015 * 1.2));
+  const cgDims = useMemo<CgDimensions | null>(
+    () => (cgHover && cgPoint ? computeCgDimensions(store.project.components, cgPoint) : null),
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- cgPoint is derived from properties
+    [cgHover, store.project.components, store.properties],
+  );
+
   // Guides shown now: drag guides while dragging, otherwise hover guides for
   // the current selection (gone when deselected, OSNAP off or cursor away).
   const activeGuides = dragId
@@ -424,7 +458,8 @@ export default function Canvas({ store, showGrid, osnap, osnapLabels = true, vie
         onPointerMove={handlePointerMove}
         onPointerUp={finishPointer}
         onPointerCancel={finishPointer}
-        onPointerLeave={() => { if (!dragId) setHoverGuides(null); }}
+        onPointerLeave={() => { setPointerInside(false); if (!dragId) setHoverGuides(null); }}
+        onPointerEnter={() => setPointerInside(true)}
         style={{ cursor: isPanning ? 'grabbing' : dragId ? 'move' : 'crosshair', touchAction: 'none' }}
       >
         <defs>
@@ -498,6 +533,10 @@ export default function Canvas({ store, showGrid, osnap, osnapLabels = true, vie
               palette={palette}
             />
           )}
+          {/* CG → extreme-edge dimensions (hover the CG marker) */}
+          {cgDims && (
+            <CgDimensionLayer dims={cgDims} px={pxNow} lineColor={palette.centroid} units={store.project.units} />
+          )}
           {/* Dynamic object-snap guide lines */}
           {activeGuides && activeGuides.guides.length > 0 && (
             <GuideLayer guides={activeGuides.guides} px={activeGuides.px} color={palette.guide} units={store.project.units} showLabels={osnapLabels} />
@@ -516,18 +555,9 @@ export default function Canvas({ store, showGrid, osnap, osnapLabels = true, vie
           const text = `${SNAP_LABELS[snap.kind]}  (${fmt(snap.target.x)}, ${fmt(snap.target.y)})`;
           return (
             <g pointerEvents="none" data-testid="osnap-label">
-              <rect
-                x={snap.target.x + 14 * px}
-                y={-snap.target.y + 10 * px}
-                width={(text.length * 7.2 + 10) * px}
-                height={18 * px}
-                rx={3 * px}
-                fill={OSNAP_LABEL_HALO}
-                stroke={OSNAP_LABEL_COLOR}
-                strokeWidth={px}
-              />
+              {/* Transparent background: dark red text only */}
               <text
-                x={snap.target.x + 19 * px}
+                x={snap.target.x + 14 * px}
                 y={-snap.target.y + 23 * px}
                 fill={OSNAP_LABEL_COLOR}
                 fontSize={12 * px}
@@ -852,9 +882,6 @@ function GuideLayer({ guides, px, color, units, showLabels = true }: {
               transform="scale(1,-1)"
               fontSize={font}
               fill={OSNAP_LABEL_COLOR}
-              stroke={OSNAP_LABEL_HALO}
-              strokeWidth={3 * px}
-              paintOrder="stroke"
               textAnchor="middle"
               dominantBaseline="middle"
               fontFamily="JetBrains Mono, monospace"
@@ -865,6 +892,78 @@ function GuideLayer({ guides, px, color, units, showLabels = true }: {
           </g>
         );
       })}
+    </g>
+  );
+}
+
+/**
+ * Horizontal + vertical dimensions from the CG to the extreme left/right/top/
+ * bottom edges of the section (drawn inside the Y-flipped group). All sizes
+ * are in screen pixels × `px`, so they stay constant under zoom/pan.
+ */
+function CgDimensionLayer({ dims, px, lineColor, units }: {
+  dims: CgDimensions;
+  px: number;
+  lineColor: string;
+  units: string;
+}) {
+  const { cg, left, right, top, bottom } = dims;
+  const sw = 1 * px;
+  const arrowL = 8 * px;
+  const arrowW = 3 * px;
+  const font = 11 * px;
+  const fmt = (d: number) => (Math.abs(d) >= 1000 ? d.toFixed(1) : d.toFixed(2));
+  const arrow = (tip: Point, dx: number, dy: number, key: string) => {
+    // Arrowhead pointing along (dx, dy) with its tip at `tip`.
+    const bx = tip.x - dx * arrowL, by = tip.y - dy * arrowL;
+    return (
+      <path key={key} d={`M ${tip.x} ${tip.y} L ${bx - dy * arrowW} ${by + dx * arrowW} L ${bx + dy * arrowW} ${by - dx * arrowW} Z`} fill={lineColor} />
+    );
+  };
+  const text = (x: number, y: number, label: string, anchor: 'middle' | 'start' | 'end', key: string, baseline: 'auto' | 'middle' | 'hanging' = 'auto') => (
+    <text
+      key={key}
+      data-cg-dim
+      x={x}
+      y={-y}
+      transform="scale(1,-1)"
+      fontSize={font}
+      fill={OSNAP_LABEL_COLOR}
+      textAnchor={anchor}
+      dominantBaseline={baseline}
+      fontFamily="JetBrains Mono, monospace"
+      fontWeight={600}
+    >
+      {label}
+    </text>
+  );
+  const ext = (from: Point, to: Point, key: string) =>
+    Math.hypot(to.x - from.x, to.y - from.y) > 0.5 * px
+      ? <line key={key} x1={from.x} y1={from.y} x2={to.x} y2={to.y} stroke={lineColor} strokeWidth={sw * 0.8} strokeDasharray={`${3 * px} ${3 * px}`} />
+      : null;
+  const minLen = 2 * arrowL;
+  return (
+    <g pointerEvents="none" data-testid="cg-dimensions">
+      {/* Extension lines from the extreme edges to the dimension lines through the CG */}
+      {ext(left.point, { x: left.coord, y: cg.y }, 'el')}
+      {ext(right.point, { x: right.coord, y: cg.y }, 'er')}
+      {ext(top.point, { x: cg.x, y: top.coord }, 'et')}
+      {ext(bottom.point, { x: cg.x, y: bottom.coord }, 'eb')}
+      {/* Horizontal dimension line */}
+      <line x1={left.coord} y1={cg.y} x2={right.coord} y2={cg.y} stroke={lineColor} strokeWidth={sw} />
+      {/* Vertical dimension line */}
+      <line x1={cg.x} y1={bottom.coord} x2={cg.x} y2={top.coord} stroke={lineColor} strokeWidth={sw} />
+      {left.distance > minLen && [arrow({ x: left.coord, y: cg.y }, -1, 0, 'al1'), arrow(cg, 1, 0, 'al2')]}
+      {right.distance > minLen && [arrow({ x: right.coord, y: cg.y }, 1, 0, 'ar1'), arrow(cg, -1, 0, 'ar2')]}
+      {top.distance > minLen && [arrow({ x: cg.x, y: top.coord }, 0, 1, 'at1'), arrow(cg, 0, -1, 'at2')]}
+      {bottom.distance > minLen && [arrow({ x: cg.x, y: bottom.coord }, 0, -1, 'ab1'), arrow(cg, 0, 1, 'ab2')]}
+      {/* Values: above the horizontal line, beside the vertical line */}
+      {text((left.coord + cg.x) / 2, cg.y + 4 * px, `${fmt(left.distance)}`, 'middle', 'tl')}
+      {text((right.coord + cg.x) / 2, cg.y + 4 * px, `${fmt(right.distance)}`, 'middle', 'tr')}
+      {text(cg.x + 5 * px, (top.coord + cg.y) / 2, `${fmt(top.distance)}`, 'start', 'tt', 'middle')}
+      {text(cg.x + 5 * px, (bottom.coord + cg.y) / 2, `${fmt(bottom.distance)}`, 'start', 'tb', 'middle')}
+      {/* Units hint next to the CG */}
+      {text(cg.x - 5 * px, cg.y - 6 * px, units, 'end', 'tu', 'hanging')}
     </g>
   );
 }
