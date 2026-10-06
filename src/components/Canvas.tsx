@@ -3,6 +3,7 @@ import React, { useRef, useState, useCallback, useEffect } from 'react';
 import type { StoreState } from '@/store/useStore';
 import type { Point, SectionComponent } from '@/engine/types';
 import { computeComponentProps, polygonInsideRect, polygonIntersectsRect } from '@/engine/geometry';
+import { componentRenderRings } from '@/engine/combine';
 import { findObjectSnap, linkedIds, SNAP_LABELS, type SnapResult } from '@/engine/osnap';
 
 /** Snap aperture in screen pixels (AutoCAD APERTURE default ≈ 10). */
@@ -152,9 +153,9 @@ export default function Canvas({ store, showGrid, osnap, viewBox, setViewBox, di
         const dx = world.x - dragStartRef.current.x;
         const dy = world.y - dragStartRef.current.y;
         const raw = { x: dragStartRef.current.ox + dx, y: dragStartRef.current.oy + dy };
-        // Ctrl/⌘ while dragging temporarily overrides OSNAP (free move).
+        // Alt while dragging temporarily overrides OSNAP (free move).
         const px = 1 / getViewTransform().scale;
-        const snapped = osnap && !(e.ctrlKey || e.metaKey)
+        const snapped = osnap && !e.altKey
           ? findObjectSnap(comp, raw, store.project.components, {
               tolerance: SNAP_APERTURE_PX * px,
               excludeIds: linkedIds(comp.id, store.project.components),
@@ -236,8 +237,16 @@ export default function Canvas({ store, showGrid, osnap, viewBox, setViewBox, di
   const startDrag = useCallback((id: string, e: React.PointerEvent) => {
     e.stopPropagation();
     const comp = store.project.components.find(c => c.id === id);
-    if (!comp || comp.locked) return;
-    store.selectComponent(id);
+    if (!comp) return;
+    if (e.ctrlKey || e.metaKey) {
+      // Ctrl/⌘-click toggles the shape in the multi-selection (e.g. to Combine).
+      store.selectComponents(store.selectedIds.includes(id)
+        ? store.selectedIds.filter(x => x !== id)
+        : [...store.selectedIds, id]);
+      return;
+    }
+    if (comp.locked) return;
+    if (!store.selectedIds.includes(id)) store.selectComponent(id);
     // One undo entry per drag (moves during the drag skip history)
     store.pushUndoSnapshot();
     const world = svgToWorld(e.clientX, e.clientY);
@@ -412,7 +421,12 @@ function ComponentRenderer({ comp, selected, strokeWidth, fontScale, onPointerDo
   // For circles and ellipses, render as polygon from outline
   if (outline.length < 2) return null;
 
-  const d = outline.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x} ${p.y}`).join(' ') + ' Z';
+  // Combined sections render their exact rings (outer + voids) so the
+  // zero-width keyhole bridge of the coordinate boundary is not drawn.
+  const rings = componentRenderRings(comp) ?? [outline];
+  const d = rings
+    .map(ring => ring.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x} ${p.y}`).join(' ') + ' Z')
+    .join(' ');
 
   // Compute bounding box for dimension annotations
   const xs = outline.map(p => p.x);
@@ -428,6 +442,7 @@ function ComponentRenderer({ comp, selected, strokeWidth, fontScale, onPointerDo
     <g onPointerDown={onPointerDown} style={{ cursor: 'move' }}>
       <path
         d={d}
+        fillRule="evenodd"
         fill={fillColor}
         stroke={strokeColor}
         strokeWidth={strokeWidth}

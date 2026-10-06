@@ -315,6 +315,26 @@ function GeometryEditor({ store, comp, onEditCoordinates }: {
     store.updateComponent(comp.id, { position: { ...comp.position, ...pos } });
   };
 
+  if (comp.associationKind === 'combined-cutout' && comp.parentId && comp.managedByParent) {
+    const parent = store.project.components.find(component => component.id === comp.parentId);
+    return (
+      <div>
+        <div className="panel-header">⊖ {comp.name}</div>
+        <div className="p-3 text-xs space-y-2" style={{ color: 'var(--text-secondary)' }}>
+          <div>This subtractive cut-out is part of <strong>{parent?.name ?? 'a combined section'}</strong> and moves with it.</div>
+          <div className="text-[10px]" style={{ color: 'var(--text-muted)' }}>
+            Uncombine the section to edit the original shape (e.g. its bolt-hole deductions).
+          </div>
+          {parent && (
+            <button className="btn btn-primary w-full text-xs" onClick={() => store.selectComponent(parent.id)}>
+              Select Combined Section
+            </button>
+          )}
+        </div>
+      </div>
+    );
+  }
+
   if (comp.associationKind === 'bolt-deduction' && comp.parentId && comp.managedByParent) {
     const plate = store.project.components.find(component => component.id === comp.parentId);
     return (
@@ -353,6 +373,10 @@ function GeometryEditor({ store, comp, onEditCoordinates }: {
           onChange={e => store.updateComponent(comp.id, { name: e.target.value })}
         />
       </div>
+
+      {comp.combinedFrom && comp.combinedFrom.length > 0 && (
+        <CombinedSectionInfo store={store} comp={comp} />
+      )}
 
       {/* Custom coordinate geometry: point count + coordinate editor */}
       {(comp.type === 'custom-shape' || comp.type === 'polygon') && (
@@ -652,6 +676,41 @@ function BoltDeductionEditor({ store, comp }: { store: StoreState; comp: Section
           </div>
         </div>
       )}
+    </>
+  );
+}
+
+function CombinedSectionInfo({ store, comp }: { store: StoreState; comp: SectionComponent }) {
+  const [error, setError] = useState<string | null>(null);
+  const members = comp.combinedFrom ?? [];
+  const cutouts = store.project.components.filter(c => c.parentId === comp.id && c.associationKind === 'combined-cutout').length;
+  const voids = Math.max(0, (comp.geometry.rings?.length ?? 1) - 1);
+  return (
+    <>
+      <div className="panel-header">Combined Section</div>
+      <div className="p-2 space-y-2 text-[11px]" style={{ color: 'var(--text-secondary)' }}>
+        <div>
+          One closed boundary of <strong>{(comp.geometry.points ?? []).length}</strong> coordinates built from{' '}
+          <strong>{members.length}</strong> shape{members.length === 1 ? '' : 's'}
+          {voids > 0 && <> with <strong>{voids}</strong> internal void{voids === 1 ? '' : 's'} (keyhole-joined)</>}
+          {cutouts > 0 && <> and <strong>{cutouts}</strong> subtractive cut-out{cutouts === 1 ? '' : 's'}</>}.
+        </div>
+        <ul className="text-[10px] list-disc pl-4" style={{ color: 'var(--text-muted)' }}>
+          {members.slice(0, 8).map(member => (
+            <li key={member.id}>{member.operation === 'subtract' ? '− ' : ''}{member.name}</li>
+          ))}
+          {members.length > 8 && <li>… {members.length - 8} more</li>}
+        </ul>
+        <button
+          className="btn btn-ghost w-full text-xs"
+          style={{ border: '1px solid var(--border)' }}
+          onClick={() => setError(store.uncombineShape(comp.id))}
+          title="Restore all original shapes exactly as they were before combining"
+        >
+          ⊟ Uncombine
+        </button>
+        {error && <div className="text-[10px]" style={{ color: 'var(--danger)' }}>{error}</div>}
+      </div>
     </>
   );
 }

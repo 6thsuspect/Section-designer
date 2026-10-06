@@ -88,7 +88,7 @@ export default function Toolbar({
         className={`btn text-xs ${osnap ? 'btn-primary' : 'btn-ghost'}`}
         onClick={onToggleOsnap}
         title={osnap
-          ? 'Object Snap ON — dragged objects snap to endpoints, midpoints, centres, quadrants, nodes and edges (F3 to turn off)'
+          ? 'Object Snap ON — dragged objects snap to endpoints, midpoints, centres, quadrants, nodes and edges (F3 to turn off; hold Alt while dragging to move freely)'
           : 'Object Snap OFF — objects move freely (F3 to turn on)'}
         aria-pressed={osnap}
       >

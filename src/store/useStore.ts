@@ -4,6 +4,7 @@ import { v4 as uuid } from 'uuid';
 import type { SectionComponent, SectionProject, SectionProperties, StressInput, CalcTrace, Material, LengthUnit, QAMessage } from '@/engine/types';
 import { centerComponentsAtCG, computeSectionProperties, computeStress } from '@/engine/geometry';
 import { synchronizeBoltDeductions } from '@/engine/boltDeductions';
+import { combineComponents, synchronizeCombinedCutouts, uncombineComponent } from '@/engine/combine';
 import { validateComponents } from '@/engine/qa';
 
 const defaultMaterial: Material = {
@@ -42,7 +43,7 @@ function createDefaultProject(): SectionProject {
 
 /** Synchronize associated geometry and optionally maintain CG at (0,0). */
 function prepareProjectGeometry(project: SectionProject): SectionProject {
-  const synchronized = synchronizeBoltDeductions(project.components);
+  const synchronized = synchronizeCombinedCutouts(synchronizeBoltDeductions(project.components));
   const components = project.alignCGToOrigin
     ? centerComponentsAtCG(synchronized)
     : synchronized;
@@ -75,6 +76,10 @@ export interface StoreState {
   setProjectMeta: (name: string, description: string) => void;
   setUnits: (u: LengthUnit) => void;
   toggleCGOrigin: () => void;
+  /** Combine shapes into one closed section; returns an error message on failure. */
+  combineShapes: (ids: string[]) => string | null;
+  /** Restore a combined section's last uncombined state. */
+  uncombineShape: (id: string) => string | null;
   undo: () => void;
   redo: () => void;
   recalculate: () => void;
@@ -272,6 +277,24 @@ export function useStore(): StoreState {
     setProjectState(prev => ({ ...prev, units }));
   }, []);
 
+  const combineShapes = useCallback((ids: string[]): string | null => {
+    const outcome = combineComponents(project.components, ids, uuid());
+    if (!outcome.ok) return outcome.error;
+    updateProjectAndRecalc(p => ({ ...p, components: outcome.components }));
+    setSelectedIds([outcome.combinedId]);
+    setSelectedComponentId(outcome.combinedId);
+    return null;
+  }, [project.components, updateProjectAndRecalc]);
+
+  const uncombineShape = useCallback((id: string): string | null => {
+    const outcome = uncombineComponent(project.components, id);
+    if (!outcome.ok) return outcome.error;
+    updateProjectAndRecalc(p => ({ ...p, components: outcome.components }));
+    setSelectedIds(outcome.restoredIds);
+    setSelectedComponentId(outcome.restoredIds[outcome.restoredIds.length - 1] ?? null);
+    return null;
+  }, [project.components, updateProjectAndRecalc]);
+
   const toggleCGOrigin = useCallback(() => {
     updateProjectAndRecalc(project => ({
       ...project,
@@ -358,6 +381,8 @@ export function useStore(): StoreState {
     setProjectMeta,
     setUnits,
     toggleCGOrigin,
+    combineShapes,
+    uncombineShape,
     undo,
     redo,
     recalculate,

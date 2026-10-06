@@ -54,7 +54,8 @@ export function validateComponents(components: SectionComponent[]): QAMessage[] 
     if (comp.type === 'polygon' || comp.type === 'custom-shape') {
       if ((g.points ?? []).length < 3) {
         messages.push({ level: 'error', category: 'geometry', message: `${comp.name}: Custom/polygon shape needs at least 3 points.`, componentId: comp.id });
-      } else if (polygonIsSelfIntersecting(g.points ?? [])) {
+      } else if (!g.rings && polygonIsSelfIntersecting(g.points ?? [])) {
+        // Combined sections (g.rings) use zero-width keyhole bridges by design.
         messages.push({
           level: 'warning',
           category: 'engineering',

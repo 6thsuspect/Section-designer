@@ -80,6 +80,27 @@ calculations.
 -   Section properties are always computed about the centroidal axes,
     regardless of whether the toggle is enabled.
 
+### Combine Shapes / Uncombine
+
+-   Select two or more shapes (Ctrl/⌘-click on the canvas, Ctrl/⌘/Shift-click
+    in the component tree, or a window selection) and click **⊕ Combine**.
+-   Additive shapes are boolean-unioned into one `custom-shape` whose
+    coordinates form a **single continuous closed boundary**. Overlaps are
+    counted once. Internal voids (e.g. a box made of four plates) are joined to
+    the outer boundary by a zero-width keyhole bridge, so the boundary stays a
+    single loop and area/inertia equal outer − void exactly. The bridge is not
+    drawn on the canvas.
+-   Subtractive members — including bolt-hole deductions of selected plates —
+    become locked cut-outs that move with the combined section, so net-section
+    properties are retained.
+-   Shapes must be connected (overlapping or sharing an edge — OSNAP helps)
+    and share one material; otherwise Combine explains why it cannot proceed.
+    Circles/ellipses are represented by 256-segment boundaries when combined.
+-   **⊟ Uncombine** (component tree or Properties panel) restores the last
+    uncombined state exactly: every original shape with its id, position,
+    rotation, dimensions, material, bolt-hole deductions and other settings.
+    Combined sections can be combined again; Uncombine reverts one level.
+
 ### Object Snap (OSNAP)
 
 -   Toggle with the **OSNAP** toolbar button or **F3** (as in AutoCAD). The
@@ -90,7 +111,7 @@ calculations.
     origin) of other visible components, within a 12 px aperture.
 -   An AutoCAD-style marker (□ endpoint, △ midpoint, ○ centre, ◇ quadrant,
     ⊗ node, ⧖ nearest) and a label appear at the snap point.
--   Hold **Ctrl/⌘** while dragging to move freely for that drag; with OSNAP
+-   Hold **Alt** while dragging to move freely for that drag; with OSNAP
     off, objects always move freely.
 
 ### Rectangular bolt-hole deductions

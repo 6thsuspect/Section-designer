@@ -2,6 +2,7 @@
 // Run: node --experimental-strip-types scripts/verify-properties.mts
 import { centerComponentsAtCG, computeSectionProperties, computeComponentTorsion } from '../src/engine/geometry.ts';
 import { synchronizeBoltDeductions, withEdgeDistance, withEdge2Distance, withReference, withSpacing, withCount, deductionPatternIssues, resolveDeductionLayout } from '../src/engine/boltDeductions.ts';
+import { combineComponents, uncombineComponent, synchronizeCombinedCutouts, signedArea } from '../src/engine/combine.ts';
 import { findObjectSnap, componentSnapFeatures } from '../src/engine/osnap.ts';
 import type { SectionComponent, SectionProperties } from '../src/engine/types.ts';
 
@@ -400,6 +401,92 @@ function mkComp(geometry: SectionComponent['geometry'], type: SectionComponent['
   const D = { ...mkComp({ radius: 10 }, 'circle'), position: { x: 200, y: 200 } };
   const cc = findObjectSnap(D, { x: 1, y: 1 }, [C, D], { tolerance: tol });
   checkTrue('circle centre snap', cc?.kind === 'center' && Math.abs(cc.position.x) < 1e-12);
+}
+
+// ─── Test 13: Combine / Uncombine ─────────────────────────────────────────
+{
+  const at = (c: SectionComponent, x: number, y: number): SectionComponent => ({ ...c, position: { x, y } });
+  // T-section from two plates sharing an edge: flange 200×20 on a web 20×180.
+  const flange = { ...at(mkComp({ width: 200, height: 20 }), 0, 190), id: 'flange', name: 'Flange' };
+  const web = {
+    ...at(mkComp({ width: 20, height: 180, boltDeductions: { enabled: true, diameter: 22, count: 2, spacing: 60, grouped: true, edgeDistance: 40, spacings: [80] } }), 0, 90),
+    id: 'web', name: 'Web',
+  };
+  const before = synchronizeBoltDeductions([flange, web]);
+  const pBefore = computeSectionProperties(before).props;
+  const out = combineComponents(before, ['flange', 'web'], 'combo');
+  checkTrue('combine succeeds', out.ok);
+  if (out.ok) {
+    const combined = out.components.find(c => c.id === 'combo')!;
+    const cutouts = out.components.filter(c => c.associationKind === 'combined-cutout');
+    checkTrue('one custom-shape boundary + deduction cut-outs only',
+      combined.type === 'custom-shape' && cutouts.length === 2
+      && out.components.length === 3 && !out.components.some(c => c.id === 'flange' || c.id === 'web'));
+    check('T boundary has 8 corner coordinates', combined.geometry.points!.length, 8);
+    const pAfter = computeSectionProperties(out.components).props;
+    check('combined net area unchanged', pAfter.area, pBefore.area, 1e-10);
+    check('combined CG y unchanged', pAfter.centroidY, pBefore.centroidY, 1e-10);
+    check('combined Ix unchanged', pAfter.Ix, pBefore.Ix, 1e-9);
+    check('combined Iy unchanged', pAfter.Iy, pBefore.Iy, 1e-9);
+
+    // Move the combined section: cut-outs follow rigidly.
+    const moved = out.components.map(c => c.id === 'combo' ? { ...c, position: { x: c.position.x + 50, y: c.position.y } } : c);
+    const synced = synchronizeCombinedCutouts(moved);
+    const cut0 = synced.find(c => c.id === cutouts[0].id)!;
+    check('cut-out follows combined section', cut0.position.x, cutouts[0].position.x + 50, 1e-12);
+
+    // Uncombine restores exact originals (ids, positions, dimensions, bolt config).
+    const un = uncombineComponent(synced, 'combo');
+    checkTrue('uncombine succeeds', un.ok);
+    if (un.ok) {
+      const restored = synchronizeBoltDeductions(un.components);
+      checkTrue('uncombine restores exact components', JSON.stringify(restored) === JSON.stringify(before));
+      check('uncombined area = original', computeSectionProperties(restored).props.area, pBefore.area, 1e-12);
+    }
+  }
+
+  // Overlapping shapes: overlap counted once (union), not twice.
+  const a = { ...mkComp({ width: 100, height: 100 }), id: 'a' };
+  const b2 = { ...at(mkComp({ width: 100, height: 100 }), 50, 0), id: 'b' };
+  const ov = combineComponents([a, b2], ['a', 'b'], 'ov');
+  checkTrue('overlap combine ok', ov.ok);
+  if (ov.ok) check('overlap counted once', computeSectionProperties(ov.components).props.area, 150 * 100, 1e-9);
+
+  // Box from four plates: internal void, still one continuous closed boundary.
+  const plates = [
+    { ...at(mkComp({ width: 200, height: 20 }), 0, 140), id: 'top' },
+    { ...at(mkComp({ width: 200, height: 20 }), 0, -140), id: 'bot' },
+    { ...at(mkComp({ width: 20, height: 260 }), -90, 0), id: 'left' },
+    { ...at(mkComp({ width: 20, height: 260 }), 90, 0), id: 'right' },
+  ];
+  const boxOut = combineComponents(plates, plates.map(p => p.id), 'box');
+  checkTrue('box combine ok', boxOut.ok);
+  if (boxOut.ok) {
+    const box = boxOut.components[0];
+    checkTrue('box keeps one void ring', box.geometry.rings!.length === 2);
+    const pb = computeSectionProperties(boxOut.components).props;
+    const A = 200 * 300 - 160 * 260;
+    const Ix = (200 * 300 ** 3 - 160 * 260 ** 3) / 12;
+    check('box (keyhole) area', pb.area, A, 1e-9);
+    check('box (keyhole) Ix', pb.Ix, Ix, 1e-9);
+    check('keyhole boundary signed area', Math.abs(signedArea(box.geometry.points!)), A, 1e-9);
+  }
+
+  // Disconnected shapes are rejected.
+  const far = { ...at(mkComp({ width: 10, height: 10 }), 500, 500), id: 'far' };
+  const bad = combineComponents([a, far], ['a', 'far'], 'x');
+  checkTrue('disconnected shapes rejected', !bad.ok && /separate pieces/.test(bad.error));
+
+  // Nested: combine a combined section again, then uncombine one level.
+  if (ov.ok) {
+    const c3 = { ...at(mkComp({ width: 20, height: 20 }), 110, 0), id: 'c3' };
+    const nested = combineComponents([...ov.components, c3], ['ov', 'c3'], 'nest');
+    checkTrue('nested combine ok', nested.ok);
+    if (nested.ok) {
+      const back = uncombineComponent(nested.components, 'nest');
+      checkTrue('nested uncombine restores previous combined state', back.ok && JSON.stringify(back.components) === JSON.stringify([...ov.components, c3]));
+    }
+  }
 }
 
 console.log(failures === 0 ? '\nALL CHECKS PASSED' : `\n${failures} CHECKS FAILED`);

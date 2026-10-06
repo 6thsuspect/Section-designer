@@ -78,6 +78,12 @@ export interface ComponentGeometry {
   vertices?: [Point, Point, Point];
   // Polygon
   points?: Point[];
+  /**
+   * Combined sections only: exact material rings relative to `position`
+   * ([outer CCW, ...voids CW]) used for clean rendering and re-combining.
+   * `points` holds the equivalent single continuous (keyholed) boundary.
+   */
+  rings?: Point[][];
   // I-Section
   flangeWidth?: number;
   flangeThickness?: number;
@@ -114,10 +120,15 @@ export interface SectionComponent {
   locked: boolean;
   /** Parent rectangular plate for an associated net-section deduction. */
   parentId?: string;
-  associationKind?: 'bolt-deduction';
+  associationKind?: 'bolt-deduction' | 'combined-cutout';
   generatedIndex?: number;
   /** True while geometry is driven by the grouped parent plate. */
   managedByParent?: boolean;
+  /** Combined sections: deep snapshot of the members, restored by Uncombine. */
+  combinedFrom?: SectionComponent[];
+  /** Combined cut-outs: offset/rotation relative to the combined section. */
+  combinedOffset?: Point;
+  combinedBaseRotation?: number;
 }
 
 export interface SectionProperties {
