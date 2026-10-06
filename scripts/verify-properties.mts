@@ -4,6 +4,7 @@ import { centerComponentsAtCG, computeSectionProperties, computeComponentTorsion
 import { synchronizeBoltDeductions, withEdgeDistance, withEdge2Distance, withReference, withSpacing, withCount, deductionPatternIssues, resolveDeductionLayout } from '../src/engine/boltDeductions.ts';
 import { combineComponents, uncombineComponent, synchronizeCombinedCutouts, signedArea, deleteCombinedVoid, deleteCombinedCutout, voidAtPoint, combinedPieceCount, removeOverlappingPortion } from '../src/engine/combine.ts';
 import { findObjectSnap, componentSnapFeatures } from '../src/engine/osnap.ts';
+import { formatCoordinates } from '../src/engine/coordinateClipboard.ts';
 import type { SectionComponent, SectionProperties } from '../src/engine/types.ts';
 
 let failures = 0;
@@ -608,6 +609,13 @@ function mkComp(geometry: SectionComponent['geometry'], type: SectionComponent['
       checkTrue('legacy uncombine restores originals', un.ok && un.components.length === 2);
     }
   }
+}
+
+// ─── Test 16: Coordinate clipboard format ─────────────────────────────────
+{
+  const pts = [{ x: '0', y: '0' }, { x: ' 100.5 ', y: '-20' }, { x: 3, y: 4 }];
+  checkTrue('copy format x, y', formatCoordinates(pts, 'comma') === '0, 0\n100.5, -20\n3, 4');
+  checkTrue('copy format tab', formatCoordinates(pts, 'tab') === '0\t0\n100.5\t-20\n3\t4');
 }
 
 console.log(failures === 0 ? '\nALL CHECKS PASSED' : `\n${failures} CHECKS FAILED`);

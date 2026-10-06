@@ -1,6 +1,8 @@
 'use client';
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect, useRef, useCallback } from 'react';
 import type { Point } from '@/engine/types';
+import CoordinatePreview from './CoordinatePreview';
+import { formatCoordinates, type CopyFormat } from '@/engine/coordinateClipboard';
 
 interface Props {
   onClose: () => void;
@@ -54,6 +56,97 @@ export default function CustomShapeDialog({ onClose, onCreateShape, editShape, o
       ? editShape.points.map(p => ({ x: String(p.x), y: String(p.y) }))
       : []
   );
+
+  // ─── Point selection (edit mode) ─────────────────────────────────────────
+  const [selected, setSelected] = useState<Set<number>>(new Set());
+  const anchorRef = useRef<number | null>(null);
+  const [copyFormat, setCopyFormat] = useState<CopyFormat>('comma');
+  const [copyNotice, setCopyNotice] = useState('');
+  const dialogRef = useRef<HTMLDivElement>(null);
+
+  const selectPoint = useCallback((i: number, mode: 'single' | 'toggle' | 'range') => {
+    setSelected(prev => {
+      if (mode === 'range' && anchorRef.current !== null) {
+        const [a, b] = [Math.min(anchorRef.current, i), Math.max(anchorRef.current, i)];
+        const next = new Set(prev);
+        for (let k = a; k <= b; k++) next.add(k);
+        return next;
+      }
+      anchorRef.current = i;
+      if (mode === 'toggle') {
+        const next = new Set(prev);
+        if (next.has(i)) next.delete(i); else next.add(i);
+        return next;
+      }
+      return new Set([i]);
+    });
+  }, []);
+
+  const selectAll = useCallback(() => setSelected(new Set(rows.map((_, i) => i))), [rows]);
+  const clearSelection = useCallback(() => { setSelected(new Set()); anchorRef.current = null; }, []);
+
+  const selectedText = useCallback(() => formatCoordinates(
+    [...selected].sort((a, b) => a - b).filter(i => i < rows.length).map(i => rows[i]),
+    copyFormat,
+  ), [selected, rows, copyFormat]);
+
+  const flashCopied = useCallback((count: number) => {
+    setCopyNotice(`Copied ${count} point${count === 1 ? '' : 's'} to the clipboard`);
+    window.setTimeout(() => setCopyNotice(''), 2000);
+  }, []);
+
+  const copySelected = useCallback(async () => {
+    if (selected.size === 0) return;
+    const text = selectedText();
+    try {
+      await navigator.clipboard.writeText(text);
+    } catch {
+      // Fallback for non-secure contexts: hidden textarea + execCommand.
+      const area = document.createElement('textarea');
+      area.value = text;
+      area.style.position = 'fixed';
+      area.style.opacity = '0';
+      document.body.appendChild(area);
+      area.select();
+      document.execCommand('copy');
+      document.body.removeChild(area);
+    }
+    flashCopied(selected.size);
+  }, [selected, selectedText, flashCopied]);
+
+  // Ctrl/⌘+C: copy the selected points as plain text, unless the user is
+  // copying highlighted text inside an input field.
+  useEffect(() => {
+    if (!isEdit) return;
+    const onCopy = (e: ClipboardEvent) => {
+      if (selected.size === 0) return;
+      const active = document.activeElement as HTMLInputElement | HTMLTextAreaElement | null;
+      const inField = active && (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA');
+      const hasTextSelection = inField
+        ? (active.selectionStart ?? 0) !== (active.selectionEnd ?? 0)
+        : (window.getSelection()?.toString() ?? '') !== '';
+      if (hasTextSelection) return;
+      if (!dialogRef.current?.contains(active) && active !== document.body) return;
+      e.preventDefault();
+      e.clipboardData?.setData('text/plain', selectedText());
+      flashCopied(selected.size);
+    };
+    document.addEventListener('copy', onCopy);
+    return () => document.removeEventListener('copy', onCopy);
+  }, [isEdit, selected, selectedText, flashCopied]);
+
+  const onDialogKeyDown = (e: React.KeyboardEvent) => {
+    // Keep app-level shortcuts (Delete, Ctrl+Z, …) from acting on the
+    // section behind the dialog; Escape still closes it.
+    if (e.key !== 'Escape') e.stopPropagation();
+    if (!isEdit) return;
+    const target = e.target as HTMLElement;
+    const inField = target.tagName === 'INPUT' || target.tagName === 'TEXTAREA';
+    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'a' && !inField) {
+      e.preventDefault();
+      selectAll();
+    }
+  };
 
   // Create mode: parse on every keystroke – cheap, pure, no side-effects
   const { points: parsedPoints, lineErrors } = useMemo(() => parsePoints(coordText), [coordText]);
@@ -119,7 +212,11 @@ export default function CustomShapeDialog({ onClose, onCreateShape, editShape, o
     setRows(prev => prev.map((r, j) => (j === i ? { ...r, [key]: value } : r)));
   };
   const addRow = () => setRows(prev => [...prev, { x: '0', y: '0' }]);
-  const deleteRow = (i: number) => setRows(prev => prev.length > 1 ? prev.filter((_, j) => j !== i) : prev);
+  const deleteRow = (i: number) => {
+    if (rows.length <= 1) return;
+    setRows(prev => prev.filter((_, j) => j !== i));
+    setSelected(prev => new Set([...prev].filter(k => k !== i).map(k => (k > i ? k - 1 : k))));
+  };
   const moveRow = (i: number, dir: -1 | 1) => {
     setRows(prev => {
       const j = i + dir;
@@ -128,38 +225,22 @@ export default function CustomShapeDialog({ onClose, onCreateShape, editShape, o
       [next[i], next[j]] = [next[j], next[i]];
       return next;
     });
+    const j = i + dir;
+    if (j < 0 || j >= rows.length) return;
+    setSelected(prev => new Set([...prev].map(k => (k === i ? j : k === j ? i : k))));
   };
 
-  // SVG viewBox for preview – works for any number of points ≥ 1
   const previewPoints = activePoints;
-  const previewViewBox = useMemo(() => {
-    if (previewPoints.length === 0) return '-50 -50 100 100';
-    const xs = previewPoints.map(p => p.x);
-    const ys = previewPoints.map(p => p.y);
-    const minX = Math.min(...xs);
-    const maxX = Math.max(...xs);
-    const minY = Math.min(...ys);
-    const maxY = Math.max(...ys);
-    const w = maxX - minX || 100;
-    const h = maxY - minY || 100;
-    const pad = Math.max(w, h) * 0.15;
-    return `${minX - pad} ${minY - pad} ${w + 2 * pad} ${h + 2 * pad}`;
-  }, [previewPoints]);
-
-  // Node radius relative to view
-  const nodeR = useMemo(() => {
-    if (previewPoints.length === 0) return 3;
-    const xs = previewPoints.map(p => p.x);
-    const ys = previewPoints.map(p => p.y);
-    const span = Math.max((Math.max(...xs) - Math.min(...xs)) || 100, (Math.max(...ys) - Math.min(...ys)) || 100);
-    return span * 0.02;
-  }, [previewPoints]);
-
-  const labelSize = nodeR * 3.5;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center" style={{ background: 'rgba(0,0,0,0.6)' }}>
-      <div className="panel w-[680px] max-h-[85vh] flex flex-col" style={{ background: 'var(--bg-secondary)' }}>
+      <div
+        ref={dialogRef}
+        className="panel w-[860px] max-w-[95vw] max-h-[90vh] flex flex-col"
+        style={{ background: 'var(--bg-secondary)' }}
+        onKeyDown={onDialogKeyDown}
+        tabIndex={-1}
+      >
         <div className="panel-header flex justify-between items-center">
           <span>{isEdit ? '📐 Edit Coordinates' : '📐 Create Custom Shape (Coordinates)'}</span>
           <button className="text-sm hover:opacity-70" onClick={onClose}>✕</button>
@@ -207,11 +288,45 @@ export default function CustomShapeDialog({ onClose, onCreateShape, editShape, o
                     ＋ Add Point
                   </button>
                 </div>
+                <div className="flex items-center gap-1 mb-1 flex-wrap">
+                  <button className="btn btn-ghost text-[10px] px-2 py-0.5" onClick={selectAll} title="Select all points (Ctrl+A)">Select all</button>
+                  <button className="btn btn-ghost text-[10px] px-2 py-0.5" onClick={clearSelection} disabled={selected.size === 0}>Clear</button>
+                  <button
+                    className="btn btn-primary text-[10px] px-2 py-0.5"
+                    onClick={copySelected}
+                    disabled={selected.size === 0}
+                    style={{ opacity: selected.size === 0 ? 0.5 : 1 }}
+                    title="Copy selected coordinates as plain text (Ctrl+C)"
+                  >⧉ Copy{selected.size > 0 ? ` (${selected.size})` : ''}</button>
+                  <select
+                    className="input-field text-[10px] py-0.5 w-auto"
+                    value={copyFormat}
+                    onChange={e => setCopyFormat(e.target.value as CopyFormat)}
+                    title="Clipboard format"
+                  >
+                    <option value="comma">x, y</option>
+                    <option value="tab">x ⇥ y (spreadsheet)</option>
+                  </select>
+                  <span className="text-[10px] ml-auto" style={{ color: copyNotice ? 'var(--success)' : 'var(--text-muted)' }}>
+                    {copyNotice || `${selected.size} selected`}
+                  </span>
+                </div>
                 <div className="flex-1 overflow-y-auto rounded" style={{ border: '1px solid var(--border)', maxHeight: 260 }}>
                   <table className="w-full text-xs font-mono">
                     <thead>
                       <tr style={{ color: 'var(--text-muted)', background: 'var(--bg-primary)' }}>
-                        <th className="px-2 py-1 text-left font-semibold w-8">#</th>
+                        <th className="px-2 py-1 text-left font-semibold w-12">
+                          <label className="flex items-center gap-1 cursor-pointer">
+                            <input
+                              type="checkbox"
+                              checked={rows.length > 0 && selected.size === rows.length}
+                              ref={el => { if (el) el.indeterminate = selected.size > 0 && selected.size < rows.length; }}
+                              onChange={e => (e.target.checked ? selectAll() : clearSelection())}
+                              aria-label="Select all points"
+                            />
+                            #
+                          </label>
+                        </th>
                         <th className="px-2 py-1 text-left font-semibold">X</th>
                         <th className="px-2 py-1 text-left font-semibold">Y</th>
                         <th className="px-2 py-1 text-center font-semibold w-20">Order</th>
@@ -221,9 +336,36 @@ export default function CustomShapeDialog({ onClose, onCreateShape, editShape, o
                     <tbody>
                       {rows.map((r, i) => {
                         const bad = editParsed.badRows.has(i);
+                        const isSel = selected.has(i);
                         return (
-                          <tr key={i} style={{ borderTop: '1px solid var(--border)', background: bad ? 'rgba(239,68,68,0.08)' : undefined }}>
-                            <td className="px-2 py-0.5" style={{ color: 'var(--text-muted)' }}>{i + 1}</td>
+                          <tr
+                            key={i}
+                            style={{
+                              borderTop: '1px solid var(--border)',
+                              background: bad ? 'rgba(239,68,68,0.08)' : isSel ? 'rgba(34,211,238,0.12)' : undefined,
+                              boxShadow: isSel ? 'inset 3px 0 0 #22d3ee' : undefined,
+                            }}
+                          >
+                            <td
+                              className="px-2 py-0.5 cursor-pointer select-none whitespace-nowrap"
+                              style={{ color: isSel ? '#22d3ee' : 'var(--text-muted)' }}
+                              onMouseDown={e => { if (e.shiftKey) e.preventDefault(); }}
+                              onClick={e => {
+                                selectPoint(i, e.shiftKey ? 'range' : (e.ctrlKey || e.metaKey) ? 'toggle' : 'single');
+                                dialogRef.current?.focus();
+                              }}
+                              title="Click to select · Ctrl/⌘-click to add/remove · Shift-click for a range"
+                            >
+                              <input
+                                type="checkbox"
+                                className="mr-1 align-middle pointer-events-none"
+                                checked={isSel}
+                                readOnly
+                                tabIndex={-1}
+                                aria-label={`Select point ${i + 1}`}
+                              />
+                              {i + 1}
+                            </td>
                             <td className="px-1 py-0.5">
                               <input
                                 className="input-field py-0.5 text-xs"
@@ -277,6 +419,7 @@ export default function CustomShapeDialog({ onClose, onCreateShape, editShape, o
                 </div>
                 <div className="text-[10px] mt-1" style={{ color: 'var(--text-muted)' }}>
                   Points are connected in order; the polygon closes automatically from the last point back to the first.
+                  Select points via the # column or preview nodes (Ctrl/⌘ or Shift for multiple), then Ctrl+C to copy them as plain text.
                 </div>
               </div>
             )}
@@ -302,50 +445,16 @@ export default function CustomShapeDialog({ onClose, onCreateShape, editShape, o
           </div>
 
           {/* Preview side */}
-          <div className="w-52 flex flex-col">
+          <div className="w-80 flex flex-col">
             <div className="text-[11px] font-semibold uppercase mb-1" style={{ color: 'var(--text-muted)' }}>
               Preview
             </div>
-            <div className="flex-1 rounded overflow-hidden" style={{ background: '#0c1222', border: '1px solid var(--border)', minHeight: 200 }}>
-              <svg viewBox={previewViewBox} className="w-full h-full" style={{ transform: 'scaleY(-1)' }}>
-                {/* Draw filled custom section only when ≥ 3 points */}
-                {previewPoints.length >= 3 && (
-                  <polygon
-                    points={previewPoints.map(p => `${p.x},${p.y}`).join(' ')}
-                    fill="rgba(59,130,246,0.2)"
-                    stroke="#3b82f6"
-                    strokeWidth={nodeR * 0.5}
-                    strokeLinejoin="round"
-                  />
-                )}
-
-                {/* Draw connecting lines when 2 points */}
-                {previewPoints.length === 2 && (
-                  <line
-                    x1={previewPoints[0].x} y1={previewPoints[0].y}
-                    x2={previewPoints[1].x} y2={previewPoints[1].y}
-                    stroke="#3b82f6" strokeWidth={nodeR * 0.5}
-                  />
-                )}
-
-                {/* Always draw nodes for every parsed point */}
-                {previewPoints.map((p, i) => (
-                  <g key={i}>
-                    <circle cx={p.x} cy={p.y} r={nodeR} fill="#fbbf24" />
-                    <text
-                      x={p.x + nodeR * 1.5}
-                      y={-(p.y) + labelSize * 0.35}
-                      fill="#fbbf24"
-                      fontSize={labelSize}
-                      fontFamily="monospace"
-                      transform="scale(1,-1)"
-                    >
-                      {i + 1}
-                    </text>
-                  </g>
-                ))}
-              </svg>
-            </div>
+            <CoordinatePreview
+              points={previewPoints}
+              selected={isEdit ? selected : undefined}
+              onSelectPoint={isEdit ? (i, mode) => { selectPoint(i, mode); dialogRef.current?.focus(); } : undefined}
+              onClearSelection={isEdit ? clearSelection : undefined}
+            />
             <div className="text-[10px] mt-1 text-center font-mono" style={{ color: 'var(--text-muted)' }}>
               {previewPoints.length} node{previewPoints.length !== 1 ? 's' : ''}
               {previewPoints.length >= 3 && ' — ready'}

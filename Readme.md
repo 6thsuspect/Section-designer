@@ -80,6 +80,20 @@ calculations.
 -   Section properties are always computed about the centroidal axes,
     regardless of whether the toggle is enabled.
 
+### Edit Coordinates dialog
+
+-   Select coordinate points via the **#** column or by clicking preview
+    nodes: click for one, **Ctrl/⌘-click** to add/remove, **Shift-click** for
+    a range, **Ctrl+A** or the header checkbox for all.
+-   **Ctrl+C** (or **⧉ Copy**) copies the selected points to the clipboard as
+    plain text, one point per line — `x, y` or tab-separated for spreadsheets
+    — ready to paste into any other application.
+-   Preview: **mouse-wheel zoom** anchored at the cursor, **drag to pan**,
+    **⤢ Fit** to fit the complete section (stays fitted while editing until
+    you zoom or pan), and **🏷 Labels** on/off for point numbers (selected
+    points always show their coordinates). These only change the preview;
+    the section geometry is never modified.
+
 ### Combine Shapes / Uncombine
 
 -   Select two or more shapes (Ctrl/⌘-click on the canvas, Ctrl/⌘/Shift-click
