@@ -10,7 +10,7 @@ const PICKBOX_PX = 5;
 /** Movement (px) before a press on empty space becomes a selection window. */
 const DRAG_THRESHOLD_PX = 3;
 import { combinedVoids, componentRenderRings } from '@/engine/combine';
-import { findObjectSnap, linkedIds, OSNAP_LABEL_COLOR, SNAP_LABELS, type SnapResult } from '@/engine/osnap';
+import { findObjectSnap, linkedIds, SNAP_LABELS, type SnapResult } from '@/engine/osnap';
 
 /** Snap aperture in screen pixels (AutoCAD APERTURE default ≈ 10). */
 const SNAP_APERTURE_PX = 12;
@@ -535,11 +535,11 @@ export default function Canvas({ store, showGrid, osnap, osnapLabels = true, vie
           )}
           {/* CG → extreme-edge dimensions (hover the CG marker) */}
           {cgDims && (
-            <CgDimensionLayer dims={cgDims} px={pxNow} lineColor={palette.centroid} units={store.project.units} />
+            <CgDimensionLayer dims={cgDims} px={pxNow} lineColor={palette.centroid} halo={palette.background} units={store.project.units} />
           )}
           {/* Dynamic object-snap guide lines */}
           {activeGuides && activeGuides.guides.length > 0 && (
-            <GuideLayer guides={activeGuides.guides} px={activeGuides.px} color={palette.guide} units={store.project.units} showLabels={osnapLabels} />
+            <GuideLayer guides={activeGuides.guides} px={activeGuides.px} color={palette.guide} halo={palette.background} units={store.project.units} showLabels={osnapLabels} />
           )}
           {/* Object snap indicator (AutoCAD-style glyph at the snap point) */}
           {snap && dragId && (
@@ -555,13 +555,21 @@ export default function Canvas({ store, showGrid, osnap, osnapLabels = true, vie
           const text = `${SNAP_LABELS[snap.kind]}  (${fmt(snap.target.x)}, ${fmt(snap.target.y)})`;
           return (
             <g pointerEvents="none" data-testid="osnap-label">
-              {/* Transparent background: dark red text only */}
-              <text
+              <rect
                 x={snap.target.x + 14 * px}
+                y={-snap.target.y + 10 * px}
+                width={(text.length * 7 + 10) * px}
+                height={18 * px}
+                rx={3 * px}
+                fill="rgba(15,23,42,0.92)"
+                stroke="#facc15"
+                strokeWidth={px}
+              />
+              <text
+                x={snap.target.x + 19 * px}
                 y={-snap.target.y + 23 * px}
-                fill={OSNAP_LABEL_COLOR}
+                fill="#facc15"
                 fontSize={12 * px}
-                fontWeight={600}
                 fontFamily="JetBrains Mono, monospace"
               >
                 {text}
@@ -601,7 +609,7 @@ export default function Canvas({ store, showGrid, osnap, osnapLabels = true, vie
       <div className="absolute bottom-2 left-2 px-2 py-1 rounded text-[10px] font-mono" style={{ background: palette.overlayBg, color: palette.overlayText }}>
         X: {mouseWorld.x.toFixed(1)} &nbsp; Y: {mouseWorld.y.toFixed(1)} &nbsp; {store.project.units}
         &nbsp;·&nbsp;<span style={{ color: osnap ? palette.snap : undefined, opacity: osnap ? 1 : 0.5 }}>OSNAP {osnap ? 'ON' : 'OFF'}</span>
-        &nbsp;·&nbsp;<span style={{ color: osnapLabels ? OSNAP_LABEL_COLOR : undefined, opacity: osnapLabels ? 1 : 0.5, fontWeight: osnapLabels ? 600 : undefined }}>DIMS {osnapLabels ? 'ON' : 'OFF'}</span>
+        &nbsp;·&nbsp;<span style={{ color: osnapLabels ? palette.snap : undefined, opacity: osnapLabels ? 1 : 0.5 }}>DIMS {osnapLabels ? 'ON' : 'OFF'}</span>
       </div>
 
       {/* Grid size indicator */}
@@ -831,10 +839,11 @@ function SnapMarker({ snap, size, color = '#facc15' }: { snap: SnapResult; size:
  * Alignment guides extend slightly past both points (tracking-line look);
  * perpendicular guides get a right-angle tick and the gap distance.
  */
-function GuideLayer({ guides, px, color, units, showLabels = true }: {
+function GuideLayer({ guides, px, color, halo, units, showLabels = true }: {
   guides: Guide[];
   px: number;
   color: string;
+  halo: string;
   units: string;
   /** OSNAP Dimensions/Labels toggle: lines/markers stay, text is hidden. */
   showLabels?: boolean;
@@ -881,7 +890,10 @@ function GuideLayer({ guides, px, color, units, showLabels = true }: {
               y={-mid.y}
               transform="scale(1,-1)"
               fontSize={font}
-              fill={OSNAP_LABEL_COLOR}
+              fill={color}
+              stroke={halo}
+              strokeWidth={3 * px}
+              paintOrder="stroke"
               textAnchor="middle"
               dominantBaseline="middle"
               fontFamily="JetBrains Mono, monospace"
@@ -901,10 +913,11 @@ function GuideLayer({ guides, px, color, units, showLabels = true }: {
  * bottom edges of the section (drawn inside the Y-flipped group). All sizes
  * are in screen pixels × `px`, so they stay constant under zoom/pan.
  */
-function CgDimensionLayer({ dims, px, lineColor, units }: {
+function CgDimensionLayer({ dims, px, lineColor, halo, units }: {
   dims: CgDimensions;
   px: number;
   lineColor: string;
+  halo: string;
   units: string;
 }) {
   const { cg, left, right, top, bottom } = dims;
@@ -928,7 +941,10 @@ function CgDimensionLayer({ dims, px, lineColor, units }: {
       y={-y}
       transform="scale(1,-1)"
       fontSize={font}
-      fill={OSNAP_LABEL_COLOR}
+      fill={lineColor}
+      stroke={halo}
+      strokeWidth={3 * px}
+      paintOrder="stroke"
       textAnchor={anchor}
       dominantBaseline={baseline}
       fontFamily="JetBrains Mono, monospace"

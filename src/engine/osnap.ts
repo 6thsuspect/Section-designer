@@ -59,9 +59,6 @@ export const SNAP_LABELS: Record<SnapKind, string> = {
   edge: 'Nearest (edge)',
 };
 
-/** OSNAP dimension / label text colour (dark red). */
-export const OSNAP_LABEL_COLOR = '#8b0000';
-
 const CURVED = new Set<SectionComponent['type']>(['circle', 'hollow-circle', 'ellipse']);
 
 function translate(p: Point, d: Point): Point {
