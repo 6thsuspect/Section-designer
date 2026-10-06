@@ -90,9 +90,18 @@ calculations.
     the outer boundary by a zero-width keyhole bridge, so the boundary stays a
     single loop and area/inertia equal outer − void exactly. The bridge is not
     drawn on the canvas.
--   Subtractive members — including bolt-hole deductions of selected plates —
-    become locked cut-outs that move with the combined section, so net-section
-    properties are retained.
+-   **Remove Overlapping Portion**: subtractive members — cut-outs and the
+    bolt-hole deductions of selected plates — are removed from the parent
+    plate material by boolean difference. Only the overlapping area is
+    removed (cut-out area outside the material is ignored and reported), so
+    the boundary contains only the actual remaining material and area, CG and
+    all section properties are recalculated from it. Cut-outs fully inside the
+    material become voids; cut-outs that split a plate (e.g. full-thickness
+    bolt deductions) leave several pieces, which are still joined into one
+    closed coordinate loop by zero-width bridges.
+-   Combined sections created by earlier versions that still carry separate
+    cut-outs show a **✂ Remove Overlapping Portion** button in the Properties
+    panel that applies the same operation.
 -   Shapes must be connected (overlapping or sharing an edge — OSNAP helps)
     and share one material; otherwise Combine explains why it cannot proceed.
     Circles/ellipses are represented by 256-segment boundaries when combined.
@@ -106,8 +115,8 @@ calculations.
     single closed boundary is rebuilt from the remaining rings, and section
     properties are recalculated; the outer boundary, other voids, position and
     rotation are unchanged. Subtractive cut-outs (e.g. bolt-hole deductions)
-    can be selected and deleted the same way. Uncombine still restores the
-    original shapes.
+    from earlier versions can be selected and deleted the same way. Uncombine
+    still restores the original shapes.
 
 ### Object Snap (OSNAP)
 

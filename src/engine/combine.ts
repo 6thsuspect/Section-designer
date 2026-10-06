@@ -14,9 +14,12 @@ import { computeComponentProps } from './geometry';
  *     outer boundary by a zero-width "keyhole" bridge, so the coordinate list
  *     is still one closed loop and the shoelace/Green's-theorem properties
  *     equal outer − void exactly;
- *   - subtractive members (bolt-hole deductions, cut-outs) are kept as
- *     subtractive cut-outs locked to the combined section, so net-section
- *     deductions remain exact without splitting the boundary.
+ *   - subtractive members (bolt-hole deductions, cut-outs) are removed from
+ *     the material by boolean difference ("Remove Overlapping Portion"), so
+ *     only the actual remaining material is kept. Only the overlapping part
+ *     is removed; cut-out area outside the material is ignored. If a cut-out
+ *     splits the section, every remaining piece is joined by zero-width
+ *     bridges so the coordinates still form one continuous closed loop.
  *
  * A deep snapshot of every original member is stored on the combined shape,
  * so Uncombine restores the last uncombined state exactly.
@@ -24,6 +27,7 @@ import { computeComponentProps } from './geometry';
 
 type ClipApi = {
   union: (geom: Polygon | MultiPolygon, ...geoms: (Polygon | MultiPolygon)[]) => MultiPolygon;
+  difference: (geom: Polygon | MultiPolygon, ...geoms: (Polygon | MultiPolygon)[]) => MultiPolygon;
 };
 const clipModule = polygonClippingModule as unknown as ClipApi & { default?: ClipApi };
 const clip: ClipApi = clipModule.default ?? clipModule;
@@ -75,8 +79,8 @@ function oriented(ring: Point[], ccw: boolean): Point[] {
   return (signedArea(ring) > 0) === ccw ? ring : [...ring].reverse();
 }
 
-/** Material region of a component as [outer, ...holes] rings (world coords). */
-export function componentRegion(comp: SectionComponent): Point[][] {
+/** Material region of a component as polygons of [outer, ...holes] rings (world coords). */
+export function componentRegion(comp: SectionComponent): Point[][][] {
   const g = comp.geometry;
   const pos = comp.position;
   const rot = comp.rotation;
@@ -108,12 +112,49 @@ export function componentRegion(comp: SectionComponent): Point[][] {
       break;
     }
     default: {
-      // Previously combined shapes carry exact rings (outer + voids).
+      // Previously combined shapes carry exact rings (outers + voids).
       const stored = componentRenderRings(comp);
-      rings = stored ?? [computeComponentProps(comp).outline];
+      if (stored) return groupRings(stored);
+      rings = [computeComponentProps(comp).outline];
     }
   }
-  return rings.filter(r => r.length >= 3).map((r, i) => oriented(r, i === 0));
+  const valid = rings.filter(r => r.length >= 3).map((r, i) => oriented(r, i === 0));
+  return valid.length > 0 ? [valid] : [];
+}
+
+/**
+ * Group a flat ring list (outers CCW, voids CW) into polygons, assigning each
+ * void to the smallest outer ring that contains it.
+ */
+export function groupRings(rings: Point[][]): Point[][][] {
+  const outers = rings.filter(r => signedArea(r) > 0);
+  const holes = rings.filter(r => signedArea(r) < 0);
+  const polygons = outers.map(outer => [outer]);
+  for (const hole of holes) {
+    const probe = hole[0];
+    let bestIndex = -1;
+    let bestArea = Infinity;
+    outers.forEach((outer, index) => {
+      const area = signedArea(outer);
+      if (area < bestArea && pointInRing(probe, outer)) {
+        bestArea = area;
+        bestIndex = index;
+      }
+    });
+    if (bestIndex >= 0) polygons[bestIndex].push(hole);
+  }
+  return polygons;
+}
+
+function pointInRing(point: Point, ring: Point[]): boolean {
+  let inside = false;
+  for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+    const a = ring[i];
+    const b = ring[j];
+    if ((a.y > point.y) !== (b.y > point.y)
+      && point.x < ((b.x - a.x) * (point.y - a.y)) / (b.y - a.y) + a.x) inside = !inside;
+  }
+  return inside;
 }
 
 function toClip(rings: Point[][]): Polygon {
@@ -179,8 +220,20 @@ function bridgeIsClear(a: Point, b: Point, rings: Point[][]): boolean {
 }
 
 /**
- * Join voids to the outer boundary with zero-width bridges, producing one
- * continuous closed coordinate loop. Outer must be CCW, holes CW.
+ * Join every ring (outers CCW, voids CW) into one continuous closed loop with
+ * zero-width bridges. Bridge edges are traversed once in each direction, so
+ * they cancel in the shoelace/Green's-theorem integrals and the loop's area
+ * and inertia equal Σ outers − Σ voids exactly.
+ */
+export function keyholeAll(rings: Point[][]): Point[] {
+  if (rings.length === 0) return [];
+  const sorted = [...rings].sort((a, b) => signedArea(b) - signedArea(a)); // largest outer first
+  return keyholeRings(sorted[0], sorted.slice(1));
+}
+
+/**
+ * Join voids (and further outer pieces) to the first ring with zero-width
+ * bridges, producing one continuous closed coordinate loop.
  */
 export function keyholeRings(outer: Point[], holes: Point[][]): Point[] {
   let merged = [...outer];
@@ -255,7 +308,7 @@ export function combineMembers(components: SectionComponent[], selectedIds: stri
 }
 
 export type CombineOutcome =
-  | { ok: true; components: SectionComponent[]; combinedId: string }
+  | { ok: true; components: SectionComponent[]; combinedId: string; report: OverlapRemovalReport }
   | { ok: false; error: string };
 
 export function combineComponents(
@@ -278,7 +331,7 @@ export function combineComponents(
     return { ok: false, error: 'Shapes with different materials cannot be combined into one section.' };
   }
 
-  const regions = additive.map(componentRegion).filter(region => region.length > 0).map(toClip);
+  const regions = additive.flatMap(componentRegion).map(toClip);
   if (regions.length === 0) return { ok: false, error: 'The selected shapes have no area to combine.' };
   let union: MultiPolygon;
   try {
@@ -287,18 +340,19 @@ export function combineComponents(
     return { ok: false, error: 'The boolean union failed for the selected geometry.' };
   }
   if (union.length === 0) return { ok: false, error: 'The selected shapes have no area to combine.' };
-  if (union.length > 1) {
+  // Previously combined sections may already consist of several pieces.
+  const existingPieces = additive.reduce((sum, member) => sum + (member.combinedFrom ? combinedPieceCount(member) : 0), 0);
+  if (union.length > 1 && union.length > existingPieces) {
     return {
       ok: false,
       error: `The selected additive shapes form ${union.length} separate pieces. Shapes must be connected — overlapping or sharing an edge — to form one closed section (OSNAP helps place them exactly).`,
     };
   }
 
-  const [outerPairs, ...holePairs] = union[0];
-  const outer = oriented(fromClipRing(outerPairs), true);
-  const holes = holePairs.map(ring => oriented(fromClipRing(ring), false)).filter(ring => ring.length >= 3);
-  const center = regionCentroid([outer, ...holes]);
-  const boundary = keyholeRings(outer, holes);
+  const removal = removeOverlaps(union, subtractive);
+  if (!removal.ok) return removal;
+  const rings = removal.rings;
+  const center = regionCentroid(rings);
   const relative = (p: Point) => ({ x: p.x - center.x, y: p.y - center.y });
 
   const firstIndex = components.findIndex(component => members.includes(component));
@@ -310,8 +364,8 @@ export function combineComponents(
     name: name ?? `Combined Section ${combinedCount}`,
     type: 'custom-shape',
     geometry: {
-      points: boundary.map(relative),
-      rings: [outer, ...holes].map(ring => ring.map(relative)),
+      points: keyholeAll(rings).map(relative),
+      rings: rings.map(ring => ring.map(relative)),
     },
     position: center,
     rotation: 0,
@@ -322,31 +376,124 @@ export function combineComponents(
     combinedFrom: clone(members),
   };
 
-  const cutouts: SectionComponent[] = subtractive.map((member, index) => {
-    const { boltDeductions: _bolt, ...geometry } = member.geometry;
-    void _bolt;
-    return {
-      ...clone(member),
-      id: `${combinedId}:cutout:${index + 1}`,
-      name: `${combined.name} — Cut-out ${index + 1} (${member.name})`,
-      geometry,
-      locked: true,
-      parentId: combinedId,
-      associationKind: 'combined-cutout',
-      managedByParent: true,
-      generatedIndex: index,
-      combinedOffset: relative(member.position),
-      combinedBaseRotation: member.rotation,
-      combinedFrom: undefined,
-    };
-  });
-
   const result: SectionComponent[] = [];
   components.forEach((component, index) => {
-    if (index === firstIndex) result.push(combined, ...cutouts);
+    if (index === firstIndex) result.push(combined);
     if (!memberIds.has(component.id)) result.push(component);
   });
-  return { ok: true, components: result, combinedId };
+  return { ok: true, components: result, combinedId, report: removal.report };
+}
+
+export interface OverlapRemovalReport {
+  /** Material area removed (only the overlapping portion of the cut-outs). */
+  removedArea: number;
+  /** Cut-outs that did not overlap the material at all. */
+  nonOverlapping: string[];
+  /** Number of separate material pieces after removal. */
+  pieces: number;
+  /** Number of interior voids after removal. */
+  voids: number;
+}
+
+function multiArea(multi: MultiPolygon): number {
+  return multi.reduce((sum, polygon) => sum + polygon.reduce((s, ring, i) => {
+    const area = Math.abs(signedArea(fromClipRingRaw(ring)));
+    return s + (i === 0 ? area : -area);
+  }, 0), 0);
+}
+
+function fromClipRingRaw(ring: Pair[]): Point[] {
+  const pts = ring.map(([x, y]) => ({ x, y }));
+  if (pts.length > 1 && pts[0].x === pts[pts.length - 1].x && pts[0].y === pts[pts.length - 1].y) pts.pop();
+  return pts;
+}
+
+function multiToRings(multi: MultiPolygon): Point[][] {
+  const rings: Point[][] = [];
+  for (const polygon of multi) {
+    polygon.forEach((ring, index) => {
+      const pts = fromClipRing(ring);
+      if (pts.length >= 3) rings.push(oriented(pts, index === 0));
+    });
+  }
+  return rings;
+}
+
+/**
+ * Remove the portions of `cutouts` that overlap `material` (boolean
+ * difference). Cut-out area outside the material is ignored.
+ */
+function removeOverlaps(
+  material: MultiPolygon,
+  cutouts: SectionComponent[],
+): { ok: true; rings: Point[][]; report: OverlapRemovalReport } | { ok: false; error: string } {
+  const before = multiArea(material);
+  let remaining = material;
+  const nonOverlapping: string[] = [];
+  for (const cutout of cutouts) {
+    const region = componentRegion(cutout).map(toClip);
+    if (region.length === 0) continue;
+    let next: MultiPolygon;
+    try {
+      next = clip.difference(remaining, ...region);
+    } catch {
+      return { ok: false, error: `Removing the overlap of "${cutout.name}" failed.` };
+    }
+    if (Math.abs(multiArea(next) - multiArea(remaining)) <= 1e-9 * Math.max(1, before)) nonOverlapping.push(cutout.name);
+    remaining = next;
+  }
+  if (remaining.length === 0 || multiArea(remaining) <= 1e-12 * Math.max(1, before)) {
+    return { ok: false, error: 'The cut-outs remove all of the material.' };
+  }
+  const rings = multiToRings(remaining);
+  return {
+    ok: true,
+    rings,
+    report: {
+      removedArea: before - multiArea(remaining),
+      nonOverlapping,
+      pieces: rings.filter(ring => signedArea(ring) > 0).length,
+      voids: rings.filter(ring => signedArea(ring) < 0).length,
+    },
+  };
+}
+
+export type OverlapOutcome =
+  | { ok: true; components: SectionComponent[]; report: OverlapRemovalReport }
+  | { ok: false; error: string };
+
+/**
+ * Remove Overlapping Portion for an existing combined section: subtract every
+ * associated cut-out (e.g. bolt-hole deductions kept by older versions) from
+ * the boundary, keep only the remaining material and delete the cut-outs.
+ * Position and rotation of the combined section are unchanged; the Uncombine
+ * snapshot still holds the original parent/subtract shapes.
+ */
+export function removeOverlappingPortion(components: SectionComponent[], combinedId: string): OverlapOutcome {
+  const combined = components.find(component => component.id === combinedId);
+  if (!combined?.combinedFrom) return { ok: false, error: 'This shape is not a combined section.' };
+  const cutouts = components.filter(component => component.parentId === combinedId && component.associationKind === 'combined-cutout');
+  if (cutouts.length === 0) return { ok: false, error: 'This combined section has no cut-outs overlapping it.' };
+  const material = componentRegion(combined).map(toClip);
+  const removal = removeOverlaps(material, cutouts);
+  if (!removal.ok) return removal;
+  // Back to the combined section's local frame (undo rotation, then translation).
+  const local = removal.rings.map(ring => ring.map(p => {
+    const q = rotateAbout(p, -combined.rotation, combined.position);
+    return { x: q.x - combined.position.x, y: q.y - combined.position.y };
+  }));
+  const updated: SectionComponent = {
+    ...combined,
+    geometry: { ...combined.geometry, points: keyholeAll(local), rings: local },
+  };
+  const cutoutIds = new Set(cutouts.map(cutout => cutout.id));
+  return {
+    ok: true,
+    report: removal.report,
+    components: components
+      .filter(component => !cutoutIds.has(component.id))
+      .map(component => component.id === combinedId ? updated : component),
+  };
 }
 
 export type UncombineOutcome =
@@ -413,7 +560,12 @@ export function synchronizeCombinedCutouts(components: SectionComponent[]): Sect
 /** Interior voids of a combined section in world coordinates. */
 export function combinedVoids(comp: SectionComponent): Point[][] {
   const rings = componentRenderRings(comp);
-  return rings ? rings.slice(1) : [];
+  return rings ? rings.filter(ring => signedArea(ring) < 0) : [];
+}
+
+/** Number of separate material pieces of a combined section. */
+export function combinedPieceCount(comp: SectionComponent): number {
+  return (comp.geometry.rings ?? []).filter(ring => signedArea(ring) > 0).length || 1;
 }
 
 export type CutoutDeleteOutcome =
@@ -433,20 +585,20 @@ export function deleteCombinedVoid(
 ): CutoutDeleteOutcome {
   const combined = components.find(component => component.id === combinedId);
   const rings = combined?.geometry.rings;
-  if (!combined || !rings || rings.length < 2) {
+  const voidPositions = (rings ?? []).map((ring, index) => (signedArea(ring) < 0 ? index : -1)).filter(index => index >= 0);
+  if (!combined || !rings || voidPositions.length === 0) {
     return { ok: false, error: 'This combined section has no interior voids.' };
   }
-  if (voidIndex < 0 || voidIndex >= rings.length - 1) {
+  if (voidIndex < 0 || voidIndex >= voidPositions.length) {
     return { ok: false, error: `Void ${voidIndex + 1} does not exist.` };
   }
-  const outer = rings[0];
-  const holes = rings.slice(1).filter((_, index) => index !== voidIndex);
+  const remaining = rings.filter((_, index) => index !== voidPositions[voidIndex]);
   const updated: SectionComponent = {
     ...combined,
     geometry: {
       ...combined.geometry,
-      points: keyholeRings(outer, holes),
-      rings: [outer, ...holes],
+      points: keyholeAll(remaining),
+      rings: remaining,
     },
   };
   return { ok: true, components: components.map(component => component.id === combinedId ? updated : component) };

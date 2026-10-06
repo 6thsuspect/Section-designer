@@ -2,7 +2,7 @@
 // Run: node --experimental-strip-types scripts/verify-properties.mts
 import { centerComponentsAtCG, computeSectionProperties, computeComponentTorsion } from '../src/engine/geometry.ts';
 import { synchronizeBoltDeductions, withEdgeDistance, withEdge2Distance, withReference, withSpacing, withCount, deductionPatternIssues, resolveDeductionLayout } from '../src/engine/boltDeductions.ts';
-import { combineComponents, uncombineComponent, synchronizeCombinedCutouts, signedArea, deleteCombinedVoid, deleteCombinedCutout, voidAtPoint } from '../src/engine/combine.ts';
+import { combineComponents, uncombineComponent, synchronizeCombinedCutouts, signedArea, deleteCombinedVoid, deleteCombinedCutout, voidAtPoint, combinedPieceCount, removeOverlappingPortion } from '../src/engine/combine.ts';
 import { findObjectSnap, componentSnapFeatures } from '../src/engine/osnap.ts';
 import type { SectionComponent, SectionProperties } from '../src/engine/types.ts';
 
@@ -418,22 +418,19 @@ function mkComp(geometry: SectionComponent['geometry'], type: SectionComponent['
   checkTrue('combine succeeds', out.ok);
   if (out.ok) {
     const combined = out.components.find(c => c.id === 'combo')!;
-    const cutouts = out.components.filter(c => c.associationKind === 'combined-cutout');
-    checkTrue('one custom-shape boundary + deduction cut-outs only',
-      combined.type === 'custom-shape' && cutouts.length === 2
-      && out.components.length === 3 && !out.components.some(c => c.id === 'flange' || c.id === 'web'));
-    check('T boundary has 8 corner coordinates', combined.geometry.points!.length, 8);
+    checkTrue('one custom-shape boundary only (deductions removed from material)',
+      combined.type === 'custom-shape' && out.components.length === 1);
+    // Full-thickness web deductions split the web: 3 material pieces remain.
+    check('T with 2 web deductions → 3 pieces', combinedPieceCount(combined), 3);
+    checkTrue('combine report', out.report.removedArea > 0 && Math.abs(out.report.removedArea - 2 * 22 * 20) < 1e-9 && out.report.pieces === 3);
+    check('single loop signed area = net area', Math.abs(signedArea(combined.geometry.points!)), 200 * 20 + 20 * 180 - 2 * 22 * 20, 1e-9);
     const pAfter = computeSectionProperties(out.components).props;
     check('combined net area unchanged', pAfter.area, pBefore.area, 1e-10);
     check('combined CG y unchanged', pAfter.centroidY, pBefore.centroidY, 1e-10);
     check('combined Ix unchanged', pAfter.Ix, pBefore.Ix, 1e-9);
     check('combined Iy unchanged', pAfter.Iy, pBefore.Iy, 1e-9);
 
-    // Move the combined section: cut-outs follow rigidly.
-    const moved = out.components.map(c => c.id === 'combo' ? { ...c, position: { x: c.position.x + 50, y: c.position.y } } : c);
-    const synced = synchronizeCombinedCutouts(moved);
-    const cut0 = synced.find(c => c.id === cutouts[0].id)!;
-    check('cut-out follows combined section', cut0.position.x, cutouts[0].position.x + 50, 1e-12);
+    const synced = synchronizeCombinedCutouts(out.components);
 
     // Uncombine restores exact originals (ids, positions, dimensions, bolt config).
     const un = uncombineComponent(synced, 'combo');
@@ -505,11 +502,13 @@ function mkComp(geometry: SectionComponent['geometry'], type: SectionComponent['
   checkTrue('ladder combine ok', out.ok);
   if (out.ok) {
     const lad = out.components.find(c => c.id === 'lad')!;
-    check('ladder has 2 voids', lad.geometry.rings!.length - 1, 2);
+    // Two frame voids + the subtract square inside the top chord (now a void).
+    check('ladder has 3 voids', lad.geometry.rings!.filter(r => signedArea(r) < 0).length, 3);
     const leftIdx = voidAtPoint(lad, { x: -70, y: 0 });
     const rightIdx = voidAtPoint(lad, { x: 70, y: 0 });
     checkTrue('voidAtPoint finds distinct voids', leftIdx >= 0 && rightIdx >= 0 && leftIdx !== rightIdx);
-    checkTrue('voidAtPoint outside void → −1', voidAtPoint(lad, { x: 0, y: 60 }) === -1);
+    checkTrue('voidAtPoint outside void → −1', voidAtPoint(lad, { x: 0, y: 30 }) === -1);
+    checkTrue('subtract square became a void', voidAtPoint(lad, { x: 0, y: 60 }) >= 0);
 
     const voidArea = 120 * 100; // between rungs: 140 − 20 = 120 wide, 100 tall
     const A0 = computeSectionProperties(out.components).props.area;
@@ -517,15 +516,16 @@ function mkComp(geometry: SectionComponent['geometry'], type: SectionComponent['
     checkTrue('delete void ok', del.ok);
     if (del.ok) {
       const lad2 = del.components.find(c => c.id === 'lad')!;
-      check('one void remains', lad2.geometry.rings!.length - 1, 1);
+      check('two voids remain', lad2.geometry.rings!.filter(r => signedArea(r) < 0).length, 2);
       const p2 = computeSectionProperties(del.components).props;
       check('area increases by deleted void', p2.area, A0 + voidArea, 1e-9);
-      check('boundary rebuilt (signed area = outer − remaining void)', Math.abs(signedArea(lad2.geometry.points!)), 300 * 140 - voidArea, 1e-9);
-      checkTrue('outer ring + other void unchanged',
-        JSON.stringify(lad2.geometry.rings![0]) === JSON.stringify(lad.geometry.rings![0])
-        && JSON.stringify(lad2.geometry.rings![1]) === JSON.stringify(lad.geometry.rings![rightIdx + 1]));
+      check('boundary rebuilt (signed area = outer − remaining voids)', Math.abs(signedArea(lad2.geometry.points!)), 300 * 140 - voidArea - 100, 1e-9);
+      const voidsOf = (c: SectionComponent) => c.geometry.rings!.filter(r => signedArea(r) < 0);
+      checkTrue('outer ring + other voids unchanged',
+        JSON.stringify(lad2.geometry.rings!.filter(r => signedArea(r) > 0)) === JSON.stringify(lad.geometry.rings!.filter(r => signedArea(r) > 0))
+        && JSON.stringify(voidsOf(lad2)) === JSON.stringify(voidsOf(lad).filter((_, i) => i !== leftIdx)));
       checkTrue('position/rotation unchanged', lad2.position.x === lad.position.x && lad2.position.y === lad.position.y && lad2.rotation === lad.rotation);
-      checkTrue('remaining void still selectable at its location', voidAtPoint(lad2, { x: 70, y: 0 }) === 0 && voidAtPoint(lad2, { x: -70, y: 0 }) === -1);
+      checkTrue('remaining void still selectable at its location', voidAtPoint(lad2, { x: 70, y: 0 }) >= 0 && voidAtPoint(lad2, { x: -70, y: 0 }) === -1);
       // Expected properties = solid outer − right void − bolt cut-out, by superposition.
       const ref = computeSectionProperties([
         at(mkComp({ width: 300, height: 140 }), 0, 0, 'o'),
@@ -536,18 +536,77 @@ function mkComp(geometry: SectionComponent['geometry'], type: SectionComponent['
       check('after void delete: Iy', p2.Iy, ref.Iy, 1e-9);
       check('after void delete: CG x', p2.centroidX, ref.centroidX, 1e-9, 1e-9);
 
-      // Delete the subtractive cut-out.
-      const cutId = del.components.find(c => c.associationKind === 'combined-cutout')!.id;
-      const del2 = deleteCombinedCutout(del.components, cutId);
-      checkTrue('delete cut-out ok', del2.ok && !del2.components.some(c => c.id === cutId));
-      if (del2.ok) check('area increases by cut-out', computeSectionProperties(del2.components).props.area, p2.area + 100, 1e-9);
-
       // Uncombine still restores original shapes.
       const un = uncombineComponent(del.components, 'lad');
       checkTrue('uncombine after delete restores originals', un.ok && JSON.stringify(un.components) === JSON.stringify([...parts, hole]));
     }
     checkTrue('invalid void index rejected', !deleteCombinedVoid(out.components, 'lad', 5).ok);
     checkTrue('non-cutout delete rejected', !deleteCombinedCutout(out.components, 'lad').ok);
+    checkTrue('no cut-outs left after combine', !out.components.some(c => c.associationKind === 'combined-cutout'));
+  }
+}
+
+// ─── Test 15: Remove Overlapping Portion ──────────────────────────────────
+{
+  const at = (c: SectionComponent, x: number, y: number, id: string): SectionComponent => ({ ...c, id, position: { x, y } });
+  const plate = at(mkComp({ width: 200, height: 20 }), 0, 0, 'pl');
+  // Cut-out 40×40 at (50, 25) spans y 5…45: only a 40×5 strip overlaps the plate (y −10…10).
+  const cut = at(mkComp({ width: 40, height: 40 }, 'rectangle', 'subtract'), 50, 25, 'ct');
+  const before = computeSectionProperties([plate, cut]).props; // old behaviour subtracts all 1600
+  check('separate subtract over-deducts (reference)', before.area, 4000 - 1600, 1e-9);
+  const out = combineComponents([plate, cut], ['pl', 'ct'], 'cmb');
+  checkTrue('combine with partial cut-out ok', out.ok);
+  if (out.ok) {
+    const p = computeSectionProperties(out.components).props;
+    check('only overlapping portion removed', p.area, 4000 - 40 * 5, 1e-9);
+    check('report removed area', out.report.removedArea, 200, 1e-9);
+    // Reference: plate minus the actual 40×10 notch.
+    const ref = computeSectionProperties([plate, at(mkComp({ width: 40, height: 5 }, 'rectangle', 'subtract'), 50, 7.5, 'n')]).props;
+    check('CG x after notch', p.centroidX, ref.centroidX, 1e-9, 1e-9);
+    check('CG y after notch', p.centroidY, ref.centroidY, 1e-9, 1e-9);
+    check('Ix after notch', p.Ix, ref.Ix, 1e-9);
+    check('Iy after notch', p.Iy, ref.Iy, 1e-9);
+    check('Ixy after notch', p.Ixy, ref.Ixy, 1e-9, 1e-6);
+    const cmb = out.components[0];
+    check('notched boundary is one loop of 8 coordinates', cmb.geometry.points!.length, 8);
+    checkTrue('no void/no extra pieces', combinedPieceCount(cmb) === 1 && cmb.geometry.rings!.length === 1);
+    const un = uncombineComponent(out.components, 'cmb');
+    checkTrue('uncombine restores plate and cut-out', un.ok && JSON.stringify(un.components) === JSON.stringify([plate, cut]));
+  }
+
+  // Non-overlapping cut-out is reported and ignored.
+  const away = at(mkComp({ width: 10, height: 10 }, 'rectangle', 'subtract'), 0, 100, 'aw');
+  const o2 = combineComponents([plate, cut, away], ['pl', 'ct', 'aw'], 'c2');
+  checkTrue('non-overlapping cut-out ignored', o2.ok && o2.report.nonOverlapping.length === 1 && Math.abs(computeSectionProperties(o2.components).props.area - 3800) < 1e-9);
+
+  // Cut-out that removes everything is rejected.
+  const big = at(mkComp({ width: 500, height: 500 }, 'rectangle', 'subtract'), 0, 0, 'bg');
+  const o3 = combineComponents([plate, big], ['pl', 'bg'], 'c3');
+  checkTrue('cut-out removing all material rejected', !o3.ok && /all of the material/.test(o3.error));
+
+  // Legacy combined section with a separate cut-out child (rotated section).
+  const base = combineComponents([plate, at(mkComp({ width: 20, height: 100 }), 0, 60, 'wb')], ['pl', 'wb'], 'leg');
+  if (base.ok) {
+    const leg = { ...base.components[0], rotation: 30 };
+    const legacyCut: SectionComponent = {
+      ...at(mkComp({ width: 40, height: 40 }, 'rectangle', 'subtract'), 0, 0, 'leg:cutout:1'),
+      parentId: 'leg', associationKind: 'combined-cutout', managedByParent: true, locked: true,
+      combinedOffset: { x: 100 - leg.position.x, y: 0 - leg.position.y }, combinedBaseRotation: 0,
+    };
+    const comps = synchronizeCombinedCutouts([leg, legacyCut]);
+    const aBefore = computeSectionProperties(comps).props.area; // over-deducts 1600
+    const r = removeOverlappingPortion(comps, 'leg');
+    checkTrue('legacy remove overlap ok', r.ok);
+    if (r.ok) {
+      const after = r.components;
+      checkTrue('cut-out child removed, position/rotation kept',
+        after.length === 1 && after[0].rotation === 30 && after[0].position.x === leg.position.x);
+      // Cut-out centred on the plate end (x=100): overlap = 20 (inside) × 20 (plate depth).
+      check('legacy: only overlap removed', computeSectionProperties(after).props.area, 4000 + 2000 - 400, 1e-6);
+      checkTrue('legacy: was over-deducted before', Math.abs(aBefore - (6000 - 1600)) < 1e-6);
+      const un = uncombineComponent(after, 'leg');
+      checkTrue('legacy uncombine restores originals', un.ok && un.components.length === 2);
+    }
   }
 }
 

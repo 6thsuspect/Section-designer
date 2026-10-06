@@ -15,7 +15,7 @@ import {
   withSpacing,
 } from '@/engine/boltDeductions';
 import { computeComponentProps, fmt, fmtSci } from '@/engine/geometry';
-import { signedArea } from '@/engine/combine';
+import { combinedPieceCount, signedArea } from '@/engine/combine';
 
 interface Props {
   store: StoreState;
@@ -689,7 +689,8 @@ function CombinedSectionInfo({ store, comp }: { store: StoreState; comp: Section
   const members = comp.combinedFrom ?? [];
   const cutoutList = store.project.components.filter(c => c.parentId === comp.id && c.associationKind === 'combined-cutout');
   const cutouts = cutoutList.length;
-  const voidRings = comp.geometry.rings?.slice(1) ?? [];
+  const voidRings = (comp.geometry.rings ?? []).filter(ring => signedArea(ring) < 0);
+  const pieces = combinedPieceCount(comp);
   const voids = voidRings.length;
   const units = store.project.units;
   return (
@@ -700,8 +701,23 @@ function CombinedSectionInfo({ store, comp }: { store: StoreState; comp: Section
           One closed boundary of <strong>{(comp.geometry.points ?? []).length}</strong> coordinates built from{' '}
           <strong>{members.length}</strong> shape{members.length === 1 ? '' : 's'}
           {voids > 0 && <> with <strong>{voids}</strong> internal void{voids === 1 ? '' : 's'} (keyhole-joined)</>}
-          {cutouts > 0 && <> and <strong>{cutouts}</strong> subtractive cut-out{cutouts === 1 ? '' : 's'}</>}.
+          {cutouts > 0 && <> and <strong>{cutouts}</strong> separate subtractive cut-out{cutouts === 1 ? '' : 's'}</>}.
+          {pieces > 1 && <> The remaining material forms <strong>{pieces}</strong> separate pieces (joined by zero-width bridges).</>}
         </div>
+        {cutouts > 0 && (
+          <button
+            className="btn btn-primary w-full text-xs"
+            onClick={() => setError(store.removeOverlap(comp.id))}
+            title="Subtract the overlapping part of every cut-out from the boundary so only the actual remaining material is kept"
+          >
+            ✂ Remove Overlapping Portion
+          </button>
+        )}
+        {store.overlapNotice && store.selectedComponentId === comp.id && (
+          <div className="text-[10px] p-1.5 rounded" style={{ color: 'var(--success)', background: 'rgba(34,197,94,0.1)' }}>
+            {store.overlapNotice}
+          </div>
+        )}
         <ul className="text-[10px] list-disc pl-4" style={{ color: 'var(--text-muted)' }}>
           {members.slice(0, 8).map(member => (
             <li key={member.id}>{member.operation === 'subtract' ? '− ' : ''}{member.name}</li>

@@ -94,7 +94,7 @@ export default function ComponentsPanel({ store, onOpenCustomShape, onEditCoordi
             <button
               className="btn btn-primary w-full text-xs"
               onClick={() => setCombineError(store.combineShapes(store.selectedIds))}
-              title="Merge the selected connected/overlapping shapes into one closed-coordinate section"
+              title="Merge the selected connected/overlapping shapes into one closed-coordinate section; overlapping subtract/cut-out portions are removed from the material"
             >
               ⊕ Combine {store.selectedIds.length} Shapes
             </button>
@@ -110,6 +110,9 @@ export default function ComponentsPanel({ store, onOpenCustomShape, onEditCoordi
             </button>
           )}
           {combineError && <div className="text-[10px]" style={{ color: 'var(--danger)' }}>{combineError}</div>}
+          {!combineError && selectedCombined && store.overlapNotice && (
+            <div className="text-[10px]" style={{ color: 'var(--success)' }}>{store.overlapNotice}</div>
+          )}
         </div>
       )}
 

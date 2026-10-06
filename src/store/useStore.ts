@@ -4,7 +4,7 @@ import { v4 as uuid } from 'uuid';
 import type { SectionComponent, SectionProject, SectionProperties, StressInput, CalcTrace, Material, LengthUnit, QAMessage } from '@/engine/types';
 import { centerComponentsAtCG, computeSectionProperties, computeStress } from '@/engine/geometry';
 import { synchronizeBoltDeductions } from '@/engine/boltDeductions';
-import { combineComponents, deleteCombinedCutout, deleteCombinedVoid, synchronizeCombinedCutouts, uncombineComponent } from '@/engine/combine';
+import { combineComponents, deleteCombinedCutout, deleteCombinedVoid, removeOverlappingPortion, synchronizeCombinedCutouts, uncombineComponent, type OverlapRemovalReport } from '@/engine/combine';
 import { validateComponents } from '@/engine/qa';
 
 const defaultMaterial: Material = {
@@ -39,6 +39,20 @@ function createDefaultProject(): SectionProject {
     revision: 1,
     alignCGToOrigin: false,
   };
+}
+
+function describeOverlapReport(report: OverlapRemovalReport, units: string): string | null {
+  const parts: string[] = [];
+  if (report.removedArea > 0) {
+    parts.push(`Removed ${report.removedArea.toFixed(2)} ${units}² of overlapping cut-out material.`);
+  }
+  if (report.nonOverlapping.length > 0) {
+    parts.push(`No overlap (ignored): ${report.nonOverlapping.join(', ')}.`);
+  }
+  if (report.pieces > 1) {
+    parts.push(`The remaining material consists of ${report.pieces} separate pieces, joined into one closed coordinate loop by zero-width bridges.`);
+  }
+  return parts.length > 0 ? parts.join(' ') : null;
 }
 
 /** Synchronize associated geometry and optionally maintain CG at (0,0). */
@@ -85,6 +99,10 @@ export interface StoreState {
   combineShapes: (ids: string[]) => string | null;
   /** Restore a combined section's last uncombined state. */
   uncombineShape: (id: string) => string | null;
+  /** Remove the portions of a combined section's cut-outs that overlap its material. */
+  removeOverlap: (id: string) => string | null;
+  /** Summary of the last Combine / Remove Overlapping Portion operation. */
+  overlapNotice: string | null;
   undo: () => void;
   redo: () => void;
   recalculate: () => void;
@@ -283,18 +301,32 @@ export function useStore(): StoreState {
     setProjectState(prev => ({ ...prev, units }));
   }, []);
 
+  const [overlapNotice, setOverlapNotice] = useState<string | null>(null);
+
   const combineShapes = useCallback((ids: string[]): string | null => {
     const outcome = combineComponents(project.components, ids, uuid());
     if (!outcome.ok) return outcome.error;
+    setOverlapNotice(describeOverlapReport(outcome.report, project.units));
     updateProjectAndRecalc(p => ({ ...p, components: outcome.components }));
     setSelectedIds([outcome.combinedId]);
     setSelectedComponentId(outcome.combinedId);
     return null;
-  }, [project.components, updateProjectAndRecalc]);
+  }, [project.components, project.units, updateProjectAndRecalc]);
+
+  const removeOverlap = useCallback((id: string): string | null => {
+    const outcome = removeOverlappingPortion(project.components, id);
+    if (!outcome.ok) return outcome.error;
+    updateProjectAndRecalc(p => ({ ...p, components: outcome.components }));
+    setOverlapNotice(describeOverlapReport(outcome.report, project.units) ?? 'Cut-outs did not overlap the material; they were removed.');
+    setSelectedIds([id]);
+    setSelectedComponentId(id);
+    return null;
+  }, [project.components, project.units, updateProjectAndRecalc]);
 
   const uncombineShape = useCallback((id: string): string | null => {
     const outcome = uncombineComponent(project.components, id);
     if (!outcome.ok) return outcome.error;
+    setOverlapNotice(null);
     updateProjectAndRecalc(p => ({ ...p, components: outcome.components }));
     setSelectedIds(outcome.restoredIds);
     setSelectedComponentId(outcome.restoredIds[outcome.restoredIds.length - 1] ?? null);
@@ -415,6 +447,8 @@ export function useStore(): StoreState {
     toggleCGOrigin,
     combineShapes,
     uncombineShape,
+    removeOverlap,
+    overlapNotice,
     undo,
     redo,
     recalculate,
