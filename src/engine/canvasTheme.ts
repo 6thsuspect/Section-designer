@@ -44,6 +44,8 @@ export interface CanvasPalette extends CanvasCustomColors {
   principal1: string;
   principal2: string;
   snap: string;
+  /** Object-snap tracking / perpendicular guide lines. */
+  guide: string;
   overlayBg: string;
   overlayText: string;
 }
@@ -81,6 +83,7 @@ const PRESETS: Record<PresetId, PaletteBase> = {
     principal1: '#f59e0b',
     principal2: '#f97316',
     snap: '#facc15',
+    guide: '#e879f9',
     overlayBg: 'rgba(15,23,42,0.85)',
     overlayText: '#94a3b8',
   },
@@ -103,6 +106,7 @@ const PRESETS: Record<PresetId, PaletteBase> = {
     principal1: '#d97706',
     principal2: '#ea580c',
     snap: '#ea580c',
+    guide: '#a21caf',
     overlayBg: 'rgba(255,255,255,0.9)',
     overlayText: '#334155',
   },
@@ -127,6 +131,7 @@ const PRESETS: Record<PresetId, PaletteBase> = {
     principal1: '#7c2d12',
     principal2: '#9a3412',
     snap: '#c2410c',
+    guide: '#7e22ce',
     overlayBg: 'rgba(240,238,232,0.92)',
     overlayText: '#1f2937',
   },

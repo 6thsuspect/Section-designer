@@ -6,6 +6,7 @@ import { combineComponents, uncombineComponent, synchronizeCombinedCutouts, sign
 import { findObjectSnap, componentSnapFeatures } from '../src/engine/osnap.ts';
 import { formatCoordinates } from '../src/engine/coordinateClipboard.ts';
 import { selectByRect, pickComponent } from '../src/engine/selection.ts';
+import { guideFeatures, referenceFeatures, findAlignment, computeGuides, hoverSource, translateFeatures, perpendicularFoot } from '../src/engine/guides.ts';
 import { DEFAULT_DOCK_LAYOUT, computeDockZones, hitDockZone, dockPanel, floatPanel, toggleFloat, panelsOnSide, floatingPanels, clampFloatRect, normalizeDockLayout, dockPreviewRect, setSideSize, setPanelOpen } from '../src/engine/dockLayout.ts';
 import { resolveCanvasPalette, normalizeCanvasThemeSettings, editCanvasColor, normalizeHex, DEFAULT_CANVAS_THEME } from '../src/engine/canvasTheme.ts';
 import type { SectionComponent, SectionProperties } from '../src/engine/types.ts';
@@ -706,6 +707,47 @@ function mkComp(geometry: SectionComponent['geometry'], type: SectionComponent['
   checkTrue('layout sanitised', n.panels.components.dock === 'left' && n.panels.components.open === true && n.panels.properties.dock === 'float'
     && n.panels.properties.float.w === 220 && n.sizes.left === 224 && n.sizes.top === 300);
   checkTrue('layout JSON round-trip', JSON.stringify(normalizeDockLayout(JSON.parse(JSON.stringify(L)))) === JSON.stringify(L));
+}
+
+// ─── Test 20: dynamic object-snap guide lines ────────────────────────────
+{
+  const at = (c: SectionComponent, x: number, y: number, id: string): SectionComponent => ({ ...c, id, position: { x, y } });
+  const ref = at(mkComp({ width: 100, height: 20 }), 0, 0, 'R');        // x −50…50, y −10…10
+  const mov = at(mkComp({ width: 20, height: 40 }), 150, 3, 'M');       // x 140…160, y −17…23
+  const refs = referenceFeatures([ref, mov], new Set(['M']));
+  checkTrue('reference excludes moving object', refs.length === 1 && refs[0].id === 'R');
+  const base = guideFeatures(mov);
+  // Moving object's points at y = −17, 3, 23 vs ref y = −10, 0, 10 → nearest |dy| = 3 (3 → 0)
+  const al = findAlignment(base.points, refs, 4);
+  checkTrue('alignment pulls Y by −3 (centre → ref centre line)', al.dy !== null && Math.abs(al.dy + 3) < 1e-9);
+  checkTrue('no X alignment out of aperture', al.dx === null);
+  const placed = translateFeatures(base, { x: 0, y: al.dy ?? 0 });
+  const g = computeGuides(placed, refs, { alignTolerance: 1e-6, perpRadius: 200, maxPerpendicular: 3 });
+  const ay = g.find(x => x.kind === 'align-y');
+  checkTrue('horizontal alignment guide shown', !!ay && Math.abs(ay!.from.y - ay!.to.y) < 1e-9 && ay!.targetId === 'R');
+  const pp = g.find(x => x.kind === 'perp');
+  checkTrue('perpendicular guide to nearest face = gap 90', !!pp && Math.abs(pp!.distance - 90) < 1e-9 && Math.abs(pp!.to.x - 50) < 1e-9);
+  checkTrue('perp guide is perpendicular to face', !!pp && Math.abs(pp!.from.y - pp!.to.y) < 1e-9);
+  const far = computeGuides(placed, refs, { alignTolerance: 1e-6, perpRadius: 50, maxPerpendicular: 3 });
+  checkTrue('no perp guide beyond radius', !far.some(x => x.kind === 'perp'));
+  const touching = computeGuides(translateFeatures(base, { x: -90, y: 0 }), refs, { alignTolerance: 1e-6, perpRadius: 200 });
+  checkTrue('touching faces give no zero-length perp guide', !touching.some(x => x.kind === 'perp' && x.distance < 1e-6));
+  checkTrue('perp foot outside segment → null', perpendicularFoot({ x: 100, y: 50 }, { x: 0, y: 0 }, { x: 50, y: 0 }) === null);
+  // Hover source: only near the selected object
+  checkTrue('hover source snaps to corner', JSON.stringify(hoverSource(base, { x: 141, y: 22 }, 3)) === JSON.stringify({ x: 140, y: 23 }));
+  const onEdge = hoverSource(base, { x: 139, y: 12 }, 3);
+  checkTrue('hover source on edge', !!onEdge && Math.abs(onEdge.x - 140) < 1e-9 && Math.abs(onEdge.y - 12) < 1e-9);
+  checkTrue('cursor away → no source (guides hidden)', hoverSource(base, { x: 100, y: 100 }, 3) === null);
+  // Combined sections: no guides from keyhole bridges
+  const plates = [
+    at(mkComp({ width: 200, height: 20 }), 0, 140, 'p1'), at(mkComp({ width: 200, height: 20 }), 0, -140, 'p2'),
+    at(mkComp({ width: 20, height: 260 }), -90, 0, 'p3'), at(mkComp({ width: 20, height: 260 }), 90, 0, 'p4'),
+  ];
+  const box = combineComponents(plates, plates.map(p => p.id), 'bx');
+  if (box.ok) {
+    const bf = guideFeatures(box.components.find(c => c.id === 'bx')!);
+    checkTrue('combined box: 8 real edges (no bridge)', bf.segments.length === 8);
+  }
 }
 
 console.log(failures === 0 ? '\nALL CHECKS PASSED' : `\n${failures} CHECKS FAILED`);

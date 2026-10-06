@@ -14,7 +14,14 @@ import { findObjectSnap, linkedIds, SNAP_LABELS, type SnapResult } from '@/engin
 
 /** Snap aperture in screen pixels (AutoCAD APERTURE default ≈ 10). */
 const SNAP_APERTURE_PX = 12;
+/** Object-snap tracking: X/Y alignment aperture (px). */
+const GUIDE_ALIGN_PX = 8;
+/** Max length of perpendicular face guides (px). */
+const GUIDE_PERP_PX = 220;
+/** How close the cursor must be to the selected object to show hover guides (px). */
+const GUIDE_HOVER_APERTURE_PX = 14;
 
+import { computeGuides, findAlignment, guideFeatures, hoverSource, referenceFeatures, translateFeatures, type Guide, type GuideFeatures, type RefFeatures } from '@/engine/guides';
 import { resolveCanvasPalette, DEFAULT_CANVAS_THEME, type CanvasPalette } from '@/engine/canvasTheme';
 
 const DEFAULT_PALETTE = resolveCanvasPalette(DEFAULT_CANVAS_THEME);
@@ -50,6 +57,11 @@ export default function Canvas({ store, showGrid, osnap, viewBox, setViewBox, di
   const [mouseWorld, setMouseWorld] = useState<Point>({ x: 0, y: 0 });
   // Active snap plus world-units-per-pixel at detection time (for glyph sizing).
   const [snap, setSnap] = useState<(SnapResult & { px: number }) | null>(null);
+  // Dynamic object-snap guide lines (drag / hover), with world-units-per-pixel.
+  const [dragGuides, setDragGuides] = useState<{ guides: Guide[]; px: number } | null>(null);
+  const [hoverGuides, setHoverGuides] = useState<{ guides: Guide[]; px: number; key: string } | null>(null);
+  // Geometry captured at drag start: moving features (at start position) + static references.
+  const guideDragRef = useRef<{ base: GuideFeatures; refs: RefFeatures[] } | null>(null);
 
   // Rectangular (AutoCAD-style) selection state
   const [selRect, setSelRect] = useState<SelectionRect>(null);
@@ -126,6 +138,23 @@ export default function Canvas({ store, showGrid, osnap, viewBox, setViewBox, di
     return () => svg.removeEventListener('wheel', onWheel);
   }, [setViewBox]);
 
+  // Reference geometry for hover guides around the current selection.
+  const selectionKey = store.selectedIds.join('|');
+  const hoverGeometry = useMemo(() => {
+    if (!osnap || store.selectedIds.length === 0) return null;
+    const comps = store.project.components;
+    const selected = comps.filter(c => c.visible && store.selectedIds.includes(c.id));
+    if (selected.length === 0) return null;
+    const exclude = new Set(selected.flatMap(c => [...linkedIds(c.id, comps)]));
+    const merged: GuideFeatures = { points: [], segments: [] };
+    for (const c of selected) {
+      const f = guideFeatures(c);
+      merged.points.push(...f.points);
+      merged.segments.push(...f.segments);
+    }
+    return { selected: merged, refs: referenceFeatures(comps, exclude) };
+  }, [osnap, store.selectedIds, store.project.components]);
+
   // ─── Pointer interactions ────────────────────────────────────────────────
   const handlePointerDown = useCallback((e: React.PointerEvent) => {
     if (e.button === 1 || (e.button === 0 && e.shiftKey)) {
@@ -177,7 +206,29 @@ export default function Canvas({ store, showGrid, osnap, viewBox, setViewBox, di
             })
           : null;
         setSnap(snapped ? { ...snapped, px } : null);
-        const target = snapped?.position ?? raw;
+        let target = snapped?.position ?? raw;
+        // Object-snap tracking: without a point snap, pull the object onto the
+        // X / Y of nearby reference points, then show the guide lines.
+        const gd = guideDragRef.current;
+        if (osnap && !e.altKey && gd) {
+          const origin = { x: dragStartRef.current.ox, y: dragStartRef.current.oy };
+          if (!snapped) {
+            const moving = translateFeatures(gd.base, { x: raw.x - origin.x, y: raw.y - origin.y });
+            const align = findAlignment(moving.points, gd.refs, GUIDE_ALIGN_PX * px);
+            target = { x: raw.x + (align.dx ?? 0), y: raw.y + (align.dy ?? 0) };
+          }
+          const placed = translateFeatures(gd.base, { x: target.x - origin.x, y: target.y - origin.y });
+          setDragGuides({
+            guides: computeGuides(placed, gd.refs, {
+              alignTolerance: Math.max(1e-9, 0.25 * px),
+              perpRadius: GUIDE_PERP_PX * px,
+              maxPerpendicular: 3,
+            }),
+            px,
+          });
+        } else {
+          setDragGuides(null);
+        }
         // Move every other selected object by the same (snapped) displacement.
         const ddx = target.x - dragStartRef.current.ox;
         const ddy = target.y - dragStartRef.current.oy;
@@ -187,6 +238,35 @@ export default function Canvas({ store, showGrid, osnap, viewBox, setViewBox, di
         ], { history: false });
       }
       return;
+    }
+
+    // Hover guides: from the selected object's point under the cursor.
+    if (hoverGeometry && !selStartRef.current) {
+      const px = 1 / getViewTransform().scale;
+      const source = hoverSource(hoverGeometry.selected, world, GUIDE_HOVER_APERTURE_PX * px);
+      if (source) {
+        const onFace = hoverGeometry.selected.segments.filter(s => {
+          const vx = s.b.x - s.a.x, vy = s.b.y - s.a.y;
+          const len = Math.hypot(vx, vy);
+          if (len < 1e-12) return false;
+          const cross = Math.abs((source.x - s.a.x) * vy - (source.y - s.a.y) * vx) / len;
+          const t = ((source.x - s.a.x) * vx + (source.y - s.a.y) * vy) / (len * len);
+          return cross < 1e-6 * Math.max(1, len) && t >= -1e-9 && t <= 1 + 1e-9;
+        });
+        setHoverGuides({
+          guides: computeGuides({ points: [source], segments: onFace }, hoverGeometry.refs, {
+            alignTolerance: GUIDE_ALIGN_PX * px,
+            perpRadius: GUIDE_PERP_PX * px,
+            maxPerpendicular: 3,
+          }),
+          px,
+          key: selectionKey,
+        });
+      } else if (hoverGuides) {
+        setHoverGuides(null);
+      }
+    } else if (hoverGuides) {
+      setHoverGuides(null);
     }
 
     // Rectangle selection while dragging on empty space
@@ -203,7 +283,7 @@ export default function Canvas({ store, showGrid, osnap, viewBox, setViewBox, di
         setSelRect(rect);
       }
     }
-  }, [isPanning, dragId, viewBox, svgToWorld, getViewTransform, setViewBox, store, osnap]);
+  }, [isPanning, dragId, viewBox, svgToWorld, getViewTransform, setViewBox, store, osnap, hoverGeometry, hoverGuides, selectionKey]);
 
   const finishPointer = useCallback((e: React.PointerEvent) => {
     if (svgRef.current?.hasPointerCapture(e.pointerId)) {
@@ -214,6 +294,8 @@ export default function Canvas({ store, showGrid, osnap, viewBox, setViewBox, di
     if (dragId) {
       setDragId(null);
       setSnap(null);
+      setDragGuides(null);
+      guideDragRef.current = null;
     } else if (selStartRef.current) {
       const start = selStartRef.current;
       const rect = selRectRef.current;
@@ -289,12 +371,33 @@ export default function Canvas({ store, showGrid, osnap, viewBox, setViewBox, di
           .map(c => ({ id: c.id, x: c.position.x, y: c.position.y }))
       : [];
     dragStartRef.current = { x: world.x, y: world.y, ox: comp.position.x, oy: comp.position.y, others };
+    // Capture guide geometry once per drag (references do not move).
+    const movingIds = [id, ...others.map(o => o.id)];
+    const base: GuideFeatures = { points: [], segments: [] };
+    for (const mid of movingIds) {
+      const mc = store.project.components.find(c => c.id === mid);
+      if (!mc) continue;
+      const f = guideFeatures(mc);
+      base.points.push(...f.points);
+      base.segments.push(...f.segments);
+    }
+    const exclude = new Set(movingIds.flatMap(mid => [...linkedIds(mid, store.project.components)]));
+    guideDragRef.current = { base, refs: referenceFeatures(store.project.components, exclude) };
+    setHoverGuides(null);
     setDragId(id);
     // Capture the pointer so the drag keeps tracking outside the canvas
     svgRef.current?.setPointerCapture(e.pointerId);
   }, [store, svgToWorld]);
 
   const gridSize = getGridSize(viewBox.w);
+
+  // Guides shown now: drag guides while dragging, otherwise hover guides for
+  // the current selection (gone when deselected, OSNAP off or cursor away).
+  const activeGuides = dragId
+    ? dragGuides
+    : osnap && !selRect && !isPanning && hoverGuides && hoverGuides.key === selectionKey && store.selectedIds.length > 0
+      ? hoverGuides
+      : null;
 
   // Live selection preview: objects that the current window/crossing would select.
   const previewIds = useMemo(
@@ -319,6 +422,7 @@ export default function Canvas({ store, showGrid, osnap, viewBox, setViewBox, di
         onPointerMove={handlePointerMove}
         onPointerUp={finishPointer}
         onPointerCancel={finishPointer}
+        onPointerLeave={() => { if (!dragId) setHoverGuides(null); }}
         style={{ cursor: isPanning ? 'grabbing' : dragId ? 'move' : 'crosshair', touchAction: 'none' }}
       >
         <defs>
@@ -391,6 +495,10 @@ export default function Canvas({ store, showGrid, osnap, viewBox, setViewBox, di
               strokeWidth={viewBox.w * 0.002}
               palette={palette}
             />
+          )}
+          {/* Dynamic object-snap guide lines */}
+          {activeGuides && activeGuides.guides.length > 0 && (
+            <GuideLayer guides={activeGuides.guides} px={activeGuides.px} color={palette.guide} halo={palette.background} units={store.project.units} />
           )}
           {/* Object snap indicator (AutoCAD-style glyph at the snap point) */}
           {snap && dragId && (
@@ -677,6 +785,77 @@ function SnapMarker({ snap, size, color = '#facc15' }: { snap: SnapResult; size:
         />
       )}
       {glyph}
+    </g>
+  );
+}
+
+/**
+ * Dashed object-snap guides (drawn inside the Y-flipped group).
+ * Alignment guides extend slightly past both points (tracking-line look);
+ * perpendicular guides get a right-angle tick and the gap distance.
+ */
+function GuideLayer({ guides, px, color, halo, units }: {
+  guides: Guide[];
+  px: number;
+  color: string;
+  halo: string;
+  units: string;
+}) {
+  const sw = 1.1 * px;
+  const dash = `${6 * px} ${4 * px}`;
+  const tick = 7 * px;
+  const font = 11 * px;
+  const fmt = (d: number) => (Math.abs(d) >= 1000 ? d.toFixed(0) : Math.abs(d) >= 10 ? d.toFixed(1) : d.toFixed(2));
+  return (
+    <g pointerEvents="none" data-testid="snap-guides">
+      {guides.map((g, i) => {
+        const vx = g.to.x - g.from.x;
+        const vy = g.to.y - g.from.y;
+        const len = Math.hypot(vx, vy) || 1;
+        const ux = vx / len, uy = vy / len;
+        const ext = 14 * px;
+        const isAlign = g.kind !== 'perp';
+        const a = isAlign ? { x: g.from.x - ux * ext, y: g.from.y - uy * ext } : g.from;
+        const b = isAlign ? { x: g.to.x + ux * ext, y: g.to.y + uy * ext } : g.to;
+        // Label at the midpoint, offset to the side of the line.
+        const mid = { x: (g.from.x + g.to.x) / 2 - uy * 8 * px, y: (g.from.y + g.to.y) / 2 + ux * 8 * px };
+        // Right-angle tick at the foot (on the face the guide meets).
+        const foot = g.ref === 'edge' ? g.to : g.from;
+        const back = g.ref === 'edge' ? -1 : 1;
+        const nx = -uy, ny = ux;
+        const tickPath = `M ${foot.x + back * ux * tick} ${foot.y + back * uy * tick} `
+          + `L ${foot.x + back * ux * tick + nx * tick} ${foot.y + back * uy * tick + ny * tick} `
+          + `L ${foot.x + nx * tick} ${foot.y + ny * tick}`;
+        const label = isAlign ? `${g.kind === 'align-x' ? '⇕' : '⇔'} ${fmt(g.distance)}` : `⊥ ${fmt(g.distance)} ${units}`;
+        return (
+          <g key={i} data-guide-kind={g.kind}>
+            <line x1={a.x} y1={a.y} x2={b.x} y2={b.y} stroke={color} strokeWidth={sw} strokeDasharray={dash} />
+            {g.kind === 'perp' && <path d={tickPath} fill="none" stroke={color} strokeWidth={sw * 0.9} />}
+            {/* Reference marker (×) and source marker (○) */}
+            <path
+              d={`M ${g.to.x - 4 * px} ${g.to.y - 4 * px} L ${g.to.x + 4 * px} ${g.to.y + 4 * px} M ${g.to.x - 4 * px} ${g.to.y + 4 * px} L ${g.to.x + 4 * px} ${g.to.y - 4 * px}`}
+              stroke={color} strokeWidth={sw * 1.3}
+            />
+            <circle cx={g.from.x} cy={g.from.y} r={3 * px} fill="none" stroke={color} strokeWidth={sw * 1.2} />
+            <text
+              x={mid.x}
+              y={-mid.y}
+              transform="scale(1,-1)"
+              fontSize={font}
+              fill={color}
+              stroke={halo}
+              strokeWidth={3 * px}
+              paintOrder="stroke"
+              textAnchor="middle"
+              dominantBaseline="middle"
+              fontFamily="JetBrains Mono, monospace"
+              fontWeight={600}
+            >
+              {label}
+            </text>
+          </g>
+        );
+      })}
     </g>
   );
 }

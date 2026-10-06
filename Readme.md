@@ -80,7 +80,19 @@ calculations.
 -   Section properties are always computed about the centroidal axes,
     regardless of whether the toggle is enabled.
 
-### Dockable panels
+### Object snap guide lines (tracking)
+
+With **OSNAP on (F3)**, dashed guide lines help align objects, AutoCAD object-snap-tracking style:
+
+- **While dragging** a shape (or a multi-selection):
+  - **Alignment guides** (⇕ vertical / ⇔ horizontal): when any point of the moving object — corner, edge midpoint, centre, quadrant — comes within 8 px of the X or Y of a point on another object, the object is pulled onto that exact alignment and a dashed tracking line is drawn between the two points (○ source, × reference) with the distance along it.
+  - **Perpendicular guides** (⊥): the shortest perpendicular from the moving object to the nearest face/edge of up to three neighbouring objects within ~220 px (or from a neighbour's corner to the moving face), with a right-angle tick and the gap distance in project units.
+  - A precise OSNAP point snap (endpoint, midpoint, …) still takes priority; guides are then drawn for the snapped position. Hold **Alt** for a free move with no snapping or guides.
+- **When a shape is selected**, move the cursor near it: guides are drawn from the selected object's point under the cursor (a corner/midpoint within 14 px, otherwise the nearest point on its edge) to aligned points and to the nearest perpendicular faces of other objects, updating as the cursor moves.
+- Guides disappear when the cursor moves away from the selected object, when no reference is in range, on deselection, when OSNAP is off, and when the drag ends.
+- Combined sections use their true outer/void rings (no phantom guides from keyhole bridges). Guide colours follow the canvas theme.
+
+## Dockable panels
 
 The **Components** and **Properties** panels are dockable, CAD-style:
 
