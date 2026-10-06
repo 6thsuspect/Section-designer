@@ -87,13 +87,15 @@ cut-outs) on an individual rectangular plate:
 
 -   **Deduction depth = bolt-hole diameter**, **deduction width = parent plate
     thickness** (the smaller plate dimension).
--   Set the **number** of holes, the **edge distance** from the plate start
-    edge (local bottom for vertical plates, left for horizontal plates) to
-    hole 1, and an **individual spacing** for every following hole from the
-    hole before it:
-    `Plate edge → H1 (edge distance) → H2 (s1) → H3 (s2) → H4 (s3) → …`
-    All distances are to hole centres; a table shows every hole's resulting
-    distance from the edge.
+-   Set the **number** of holes and the full sequence along the plate length:
+    `Edge-1 → H1 → H2 → H3 → … → Edge-2`
+    -   **Edge-1**: start face (local bottom for vertical plates, left for
+        horizontal plates) to the centre of H1.
+    -   **H(n) → H(n+1)**: individual spacing between consecutive holes.
+    -   **Edge-2**: centre of the last hole to the end face.
+-   Edge-1 + ΣH + Edge-2 always equals the plate length. Choose which edge is
+    **held** when the plate length changes; the other is recalculated
+    automatically. Edge-2 can also be typed directly.
 -   Choose how edits behave: **Shift following holes** (holes after the edited
     one keep their spacings and move with it) or **Move this hole only** (the
     next gap absorbs the change, so every other hole stays where it is).
@@ -107,8 +109,9 @@ cut-outs) on an individual rectangular plate:
 -   **Ungroup** (Properties panel or the `⊞ n` badge in the component tree):
     deductions become separate, freely editable shapes still linked to the
     plate. **Group** again to snap them back to the parametric pattern.
--   QA flags, per hole, deductions that overlap the previous hole or extend
-    beyond either plate edge.
+-   Validation reports overlapping holes (spacing < diameter), Edge-1/Edge-2
+    smaller than the hole radius, and patterns that exceed the plate length
+    (with the overrun amount).
 
 ### CG origin toggle
 

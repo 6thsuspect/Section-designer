@@ -1,7 +1,7 @@
 // Engineering verification of section properties against hand calculations.
 // Run: node --experimental-strip-types scripts/verify-properties.mts
 import { centerComponentsAtCG, computeSectionProperties, computeComponentTorsion } from '../src/engine/geometry.ts';
-import { synchronizeBoltDeductions, withEdgeDistance, withSpacing, withCount, deductionPatternIssues } from '../src/engine/boltDeductions.ts';
+import { synchronizeBoltDeductions, withEdgeDistance, withEdge2Distance, withReference, withSpacing, withCount, deductionPatternIssues, resolveDeductionLayout } from '../src/engine/boltDeductions.ts';
 import type { SectionComponent, SectionProperties } from '../src/engine/types.ts';
 
 let failures = 0;
@@ -313,6 +313,50 @@ function mkComp(geometry: SectionComponent['geometry'], type: SectionComponent['
   const bad = mkComp({ width: t, height: L, boltDeductions: { ...cfg, edgeDistance: 5, spacings: [15, 90, 400] } });
   const issues = deductionPatternIssues(bad).map(i => i.message).join(' | ');
   checkTrue('fit: start edge, overlap, end edge flagged', /start edge/.test(issues) && /overlaps/.test(issues) && /end edge/.test(issues));
+}
+
+// ─── Test 11: Edge-1 → H1 → H2 → … → Edge-2 ───────────────────────────────
+{
+  const t = 10, L = 400, d = 22;
+  const cfg = { enabled: true, diameter: d, count: 4, spacing: 70, grouped: true, edgeDistance: 40, spacings: [70, 90, 110] };
+  const lay = resolveDeductionLayout(cfg, L);
+  check('Edge-2 auto = L − Edge-1 − ΣH', lay.edge2Distance, 400 - 40 - 270, 1e-12);
+  check('sequence sums to plate length', lay.edgeDistance + lay.spacings.reduce((a, b) => a + b, 0) + lay.edge2Distance, L, 1e-12);
+
+  const pos = (c: typeof cfg, len = L) => synchronizeBoltDeductions([mkComp({ width: t, height: len, boltDeductions: c })])
+    .filter(x => x.associationKind === 'bolt-deduction').map(x => x.position.y + len / 2);
+
+  // Edge-2 edit, chain: group shifts, spacings retained, Edge-1 recalculated.
+  const e2c = withEdge2Distance(cfg, L, 60, 'chain');
+  const l2 = resolveDeductionLayout(e2c, L);
+  checkTrue('Edge-2 chain keeps spacings', JSON.stringify(l2.spacings) === '[70,90,110]');
+  check('Edge-2 chain recalculates Edge-1', l2.edgeDistance, 70, 1e-12);
+  check('Edge-2 chain last hole', pos(e2c)[3], 340, 1e-12);
+
+  // Edge-2 edit, independent: only last hole moves.
+  const e2i = withEdge2Distance(cfg, L, 60, 'independent');
+  const p2 = pos(e2i);
+  checkTrue('Edge-2 independent moves last hole only', p2[0] === 40 && Math.abs(p2[2] - 200) < 1e-12 && Math.abs(p2[3] - 340) < 1e-12);
+
+  // Plate length change: Edge-1 held → Edge-2 grows; Edge-2 held → holes follow end edge.
+  check('Edge-1 held: Edge-2 grows with plate', resolveDeductionLayout(cfg, 500).edge2Distance, 190, 1e-12);
+  const held2 = withReference(cfg, L, 'edge2');
+  const lh = resolveDeductionLayout(held2, 500);
+  check('Edge-2 held: Edge-2 unchanged', lh.edge2Distance, 90, 1e-12);
+  check('Edge-2 held: Edge-1 recalculated', lh.edgeDistance, 140, 1e-12);
+  check('Edge-2 held: last hole tracks end edge', pos(held2, 500)[3], 500 - 90, 1e-12);
+
+  // Edge-2 held + chain spacing edit keeps Edge-2 and moves earlier holes.
+  const hs = resolveDeductionLayout(withSpacing(held2, L, 2, 130, 'chain'), L);
+  checkTrue('Edge-2 held spacing edit keeps Edge-2', Math.abs(hs.edge2Distance - 90) < 1e-12 && Math.abs(hs.edgeDistance - 20) < 1e-12);
+
+  // Validation: overrun reported against Edge-2 with the excess length.
+  const over = withSpacing(cfg, L, 2, 260, 'chain'); // Edge-2 = 400 − 40 − 420 = −60
+  const msgs = deductionPatternIssues(mkComp({ width: t, height: L, boltDeductions: over })).map(i => i.message).join(' | ');
+  checkTrue('overrun flagged on Edge-2 with excess', /Edge-2 is negative/.test(msgs) && /by 60/.test(msgs));
+  const tight = withEdge2Distance(cfg, L, 5, 'independent');
+  checkTrue('Edge-2 < radius flagged', deductionPatternIssues(mkComp({ width: t, height: L, boltDeductions: tight })).some(i => /Edge-2 \(5\) < hole radius/.test(i.message)));
+  checkTrue('valid pattern has no issues', deductionPatternIssues(mkComp({ width: t, height: L, boltDeductions: cfg })).length === 0);
 }
 
 console.log(failures === 0 ? '\nALL CHECKS PASSED' : `\n${failures} CHECKS FAILED`);

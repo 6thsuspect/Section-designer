@@ -9,7 +9,9 @@ import {
   plateDeductionAxis,
   resolveDeductionLayout,
   withCount,
+  withEdge2Distance,
   withEdgeDistance,
+  withReference,
   withSpacing,
 } from '@/engine/boltDeductions';
 import { fmt, fmtSci } from '@/engine/geometry';
@@ -500,6 +502,7 @@ function BoltDeductionEditor({ store, comp }: { store: StoreState; comp: Section
   const valid = issues.length === 0;
   const badHoles = new Set(issues.map(issue => issue.hole));
   const startEdge = alongX ? 'left' : 'bottom';
+  const endEdge = alongX ? 'right' : 'top';
 
   return (
     <>
@@ -549,45 +552,85 @@ function BoltDeductionEditor({ store, comp }: { store: StoreState; comp: Section
               </div>
             </div>
 
+            <div>
+              <div className="text-[10px] font-semibold uppercase mb-1" style={{ color: 'var(--text-muted)' }}>Hold when plate length changes</div>
+              <div className="flex gap-1">
+                {(['edge1', 'edge2'] as const).map(reference => (
+                  <button
+                    key={reference}
+                    type="button"
+                    className={`btn flex-1 text-[10px] ${layout.reference === reference ? 'btn-primary' : 'btn-ghost'}`}
+                    onClick={() => commit(withReference(config, length, reference))}
+                    title={reference === 'edge1'
+                      ? 'Edge-1 stays fixed; Edge-2 is recalculated when the plate length changes'
+                      : 'Edge-2 stays fixed; Edge-1 is recalculated when the plate length changes'}
+                  >{reference === 'edge1' ? `Edge-1 (${startEdge})` : `Edge-2 (${endEdge})`}</button>
+                ))}
+              </div>
+            </div>
+
             <table className="w-full text-[10px]" style={{ color: 'var(--text-secondary)' }}>
               <thead>
                 <tr style={{ color: 'var(--text-muted)' }}>
-                  <th className="text-left font-semibold py-0.5">Hole</th>
+                  <th className="text-left font-semibold py-0.5">Segment</th>
                   <th className="text-left font-semibold py-0.5">Distance ({units})</th>
-                  <th className="text-right font-semibold py-0.5">From {startEdge} edge</th>
+                  <th className="text-right font-semibold py-0.5">Hole @ {startEdge}</th>
                 </tr>
               </thead>
               <tbody>
-                {offsets.map((offset, index) => (
-                  <tr key={index} style={{ color: badHoles.has(index + 1) ? 'var(--danger)' : undefined }}>
-                    <td className="py-0.5 pr-1 whitespace-nowrap">
-                      {index + 1}
-                      <span style={{ color: 'var(--text-muted)' }}>{index === 0 ? ' ← edge' : ` ← H${index}`}</span>
-                    </td>
+                <tr style={{ color: badHoles.has(1) ? 'var(--danger)' : undefined }}>
+                  <td className="py-0.5 pr-1 whitespace-nowrap font-semibold">Edge-1 → H1</td>
+                  <td className="py-0.5 pr-1">
+                    <input
+                      type="number" step="any" className="input-field"
+                      aria-label="Edge-1: start edge to hole 1"
+                      value={round6(layout.edgeDistance)}
+                      onChange={event => commit(withEdgeDistance(config, length, parseFloat(event.target.value) || 0, mode))}
+                    />
+                  </td>
+                  <td className="py-0.5 text-right font-mono">H1: {fmt(offsets[0])}</td>
+                </tr>
+                {layout.spacings.map((spacing, gap) => (
+                  <tr key={gap} style={{ color: badHoles.has(gap + 2) ? 'var(--danger)' : undefined }}>
+                    <td className="py-0.5 pr-1 whitespace-nowrap">H{gap + 1} → H{gap + 2}</td>
                     <td className="py-0.5 pr-1">
                       <input
-                        type="number"
-                        step="any"
-                        className="input-field"
-                        aria-label={index === 0 ? 'First hole edge distance' : `Spacing of hole ${index + 1} from hole ${index}`}
-                        value={index === 0 ? layout.edgeDistance : layout.spacings[index - 1]}
-                        onChange={event => {
-                          const value = parseFloat(event.target.value) || 0;
-                          commit(index === 0
-                            ? withEdgeDistance(config, length, value, mode)
-                            : withSpacing(config, length, index - 1, value, mode));
-                        }}
+                        type="number" step="any" className="input-field"
+                        aria-label={`Spacing from hole ${gap + 1} to hole ${gap + 2}`}
+                        value={round6(spacing)}
+                        onChange={event => commit(withSpacing(config, length, gap, parseFloat(event.target.value) || 0, mode))}
                       />
                     </td>
-                    <td className="py-0.5 text-right font-mono">{fmt(offset)}</td>
+                    <td className="py-0.5 text-right font-mono">H{gap + 2}: {fmt(offsets[gap + 1])}</td>
                   </tr>
                 ))}
+                <tr style={{ color: badHoles.has(layout.count) && layout.edge2Distance < config.diameter / 2 ? 'var(--danger)' : undefined }}>
+                  <td className="py-0.5 pr-1 whitespace-nowrap font-semibold">H{layout.count} → Edge-2</td>
+                  <td className="py-0.5 pr-1">
+                    <input
+                      type="number" step="any" className="input-field"
+                      aria-label="Edge-2: last hole to end edge"
+                      value={round6(layout.edge2Distance)}
+                      onChange={event => commit(withEdge2Distance(config, length, parseFloat(event.target.value) || 0, mode))}
+                    />
+                  </td>
+                  <td className="py-0.5 text-right font-mono" style={{ color: 'var(--text-muted)' }}>
+                    {layout.reference === 'edge1' ? 'auto' : 'held'}
+                  </td>
+                </tr>
+                <tr style={{ color: 'var(--text-muted)', borderTop: '1px solid var(--border)' }}>
+                  <td className="py-0.5 pr-1 whitespace-nowrap">Σ = Plate L</td>
+                  <td className="py-0.5 pr-1 font-mono" colSpan={2}>
+                    {fmt(layout.edgeDistance)} + {fmt(layout.spacings.reduce((sum, spacing) => sum + spacing, 0))} + {fmt(layout.edge2Distance)} = {fmt(length)} {units}
+                  </td>
+                </tr>
               </tbody>
             </table>
           </fieldset>
           <div className="text-[10px]" style={{ color: 'var(--text-muted)' }}>
-            Plate {startEdge} edge → Hole 1 (edge distance) → Hole 2 (spacing from Hole 1) → Hole 3 (spacing from Hole 2) → …
-            All distances are to hole centres. Each deduction is a {fmt(thickness)} × {fmt(config.diameter)} {units} rectangle (plate t × hole d).
+            Edge-1 ({startEdge} face) → H1 → H2 → H3 → … → Edge-2 ({endEdge} face). All distances are to hole centres;
+            the non-held edge distance is calculated automatically so the sequence always sums to the plate length.
+            Each deduction is a {fmt(thickness)} × {fmt(config.diameter)} {units} rectangle (plate t × hole d).
             Net area deducted: {fmt(layout.count * config.diameter * thickness)} {units}².
           </div>
           {grouped && !valid && (
@@ -611,6 +654,10 @@ function BoltDeductionEditor({ store, comp }: { store: StoreState; comp: Section
       )}
     </>
   );
+}
+
+function round6(value: number): number {
+  return Math.round(value * 1e6) / 1e6;
 }
 
 function NumInput({ label, value, onChange }: { label: string; value: number; onChange: (v: number) => void }) {

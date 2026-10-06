@@ -53,6 +53,13 @@ export interface BoltDeductionConfig {
    * each hole's spacing from the immediately preceding hole. Length count−1.
    */
   spacings?: number[];
+  /** Distance from the last hole centre to the plate end edge (Edge-2). */
+  edge2Distance?: number;
+  /**
+   * Which edge distance is held when the plate length changes. The opposite
+   * edge distance is recalculated so that Edge-1 + ΣH + Edge-2 = plate length.
+   */
+  reference?: 'edge1' | 'edge2';
   /** Grouped deductions remain driven by and collapsed beneath the parent. */
   grouped: boolean;
 }
