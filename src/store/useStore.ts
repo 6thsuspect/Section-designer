@@ -1,7 +1,7 @@
 'use client';
 import { useState, useCallback, useRef } from 'react';
 import { v4 as uuid } from 'uuid';
-import type { SectionComponent, SectionProject, SectionProperties, StressInput, CalcTrace, Material, LengthUnit, QAMessage } from '@/engine/types';
+import type { SectionComponent, SectionProject, SectionProperties, StressInput, CalcTrace, Material, LengthUnit, QAMessage, Point } from '@/engine/types';
 import { centerComponentsAtCG, computeSectionProperties, computeStress } from '@/engine/geometry';
 import { synchronizeBoltDeductions } from '@/engine/boltDeductions';
 import { combineComponents, deleteCombinedCutout, deleteCombinedVoid, removeOverlappingPortion, synchronizeCombinedCutouts, uncombineComponent, type OverlapRemovalReport } from '@/engine/combine';
@@ -85,6 +85,7 @@ export interface StoreState {
   addComponent: (type: SectionComponent['type']) => void;
   addCustomShape: (name: string, points: { x: number; y: number }[]) => string;
   updateComponent: (id: string, updates: Partial<SectionComponent>, opts?: { history?: boolean }) => void;
+  moveComponents: (moves: { id: string; position: Point }[], opts?: { history?: boolean }) => void;
   deleteComponent: (id: string) => void;
   deleteComponents: (ids: string[]) => void;
   duplicateComponent: (id: string) => void;
@@ -245,6 +246,16 @@ export function useStore(): StoreState {
     updateProjectAndRecalc(p => ({
       ...p,
       components: p.components.map(c => c.id === id ? { ...c, ...updates } : c),
+    }), opts?.history !== false);
+  }, [updateProjectAndRecalc]);
+
+  /** Move several components in one state update (multi-object drag). */
+  const moveComponents = useCallback((moves: { id: string; position: Point }[], opts?: { history?: boolean }) => {
+    if (moves.length === 0) return;
+    const byId = new Map(moves.map(move => [move.id, move.position]));
+    updateProjectAndRecalc(p => ({
+      ...p,
+      components: p.components.map(c => (byId.has(c.id) ? { ...c, position: byId.get(c.id)! } : c)),
     }), opts?.history !== false);
   }, [updateProjectAndRecalc]);
 
@@ -427,6 +438,7 @@ export function useStore(): StoreState {
     addComponent,
     addCustomShape,
     updateComponent,
+    moveComponents,
     deleteComponent,
     deleteComponents,
     duplicateComponent,

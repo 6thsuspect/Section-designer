@@ -80,7 +80,20 @@ calculations.
 -   Section properties are always computed about the centroidal axes,
     regardless of whether the toggle is enabled.
 
-### Edit Coordinates dialog
+### Canvas selection (AutoCAD-style)
+
+| Action | Result |
+|---|---|
+| Drag **left → right** on empty canvas | **Window** (blue, solid): selects only objects lying *completely* inside |
+| Drag **right → left** | **Crossing** (green, dashed): selects objects inside *or* touching/intersecting the box |
+| Click an object | Selects it (5 px pick-box makes thin plates and nodes easy to hit; locked objects can be selected but not moved) |
+| Click empty canvas | Clears the selection |
+| Ctrl/⌘ + click or drag | Adds to / toggles the selection |
+| Esc | Cancels an in-progress selection window |
+
+While dragging, the window displays live with its mode, size and the number of objects it will select, and those objects are highlighted in cyan. Combined sections are tested against their true outer/void rings (a window inside a void selects nothing). Locked, hidden and parent-managed (bolt deduction) objects are skipped by window/crossing selection. Dragging any selected object moves the whole selection with one snapped delta. Pan (middle button or Shift+drag), wheel zoom, OSNAP and Alt free-drag are unchanged.
+
+## Edit Coordinates dialog
 
 -   Select coordinate points via the **#** column or by clicking preview
     nodes: click for one, **Ctrl/⌘-click** to add/remove, **Shift-click** for

@@ -1,8 +1,14 @@
 'use client';
-import React, { useRef, useState, useCallback, useEffect } from 'react';
+import React, { useRef, useState, useCallback, useEffect, useMemo } from 'react';
 import type { StoreState } from '@/store/useStore';
 import type { Point, SectionComponent } from '@/engine/types';
-import { computeComponentProps, polygonInsideRect, polygonIntersectsRect } from '@/engine/geometry';
+import { computeComponentProps } from '@/engine/geometry';
+import { pickComponent, selectByRect } from '@/engine/selection';
+
+/** Pick-box half size in screen pixels for click selection near edges/nodes. */
+const PICKBOX_PX = 5;
+/** Movement (px) before a press on empty space becomes a selection window. */
+const DRAG_THRESHOLD_PX = 3;
 import { combinedVoids, componentRenderRings } from '@/engine/combine';
 import { findObjectSnap, linkedIds, SNAP_LABELS, type SnapResult } from '@/engine/osnap';
 
@@ -26,21 +32,21 @@ function getGridSize(viewW: number): number {
   return GRID_SIZES.find(s => s >= target) ?? 1000;
 }
 
-type SelectionRect = { x0: number; y0: number; x1: number; y1: number; mode: 'window' | 'crossing' } | null;
+type SelectionRect = { x0: number; y0: number; x1: number; y1: number; mode: 'window' | 'crossing'; additive: boolean } | null;
 
 export default function Canvas({ store, showGrid, osnap, viewBox, setViewBox, dimensionFontScale }: Props) {
   const svgRef = useRef<SVGSVGElement>(null);
   const [isPanning, setIsPanning] = useState(false);
   const panStartRef = useRef<{ x: number; y: number; vbx: number; vby: number }>({ x: 0, y: 0, vbx: 0, vby: 0 });
   const [dragId, setDragId] = useState<string | null>(null);
-  const dragStartRef = useRef<{ x: number; y: number; ox: number; oy: number }>({ x: 0, y: 0, ox: 0, oy: 0 });
+  const dragStartRef = useRef<{ x: number; y: number; ox: number; oy: number; others: { id: string; x: number; y: number }[] }>({ x: 0, y: 0, ox: 0, oy: 0, others: [] });
   const [mouseWorld, setMouseWorld] = useState<Point>({ x: 0, y: 0 });
   // Active snap plus world-units-per-pixel at detection time (for glyph sizing).
   const [snap, setSnap] = useState<(SnapResult & { px: number }) | null>(null);
 
   // Rectangular (AutoCAD-style) selection state
   const [selRect, setSelRect] = useState<SelectionRect>(null);
-  const selStartRef = useRef<{ sx: number; sy: number; wx: number; wy: number } | null>(null);
+  const selStartRef = useRef<{ sx: number; sy: number; wx: number; wy: number; additive: boolean } | null>(null);
   const selRectRef = useRef<SelectionRect>(null);
 
   // ─── Screen ↔ world transform ────────────────────────────────────────────
@@ -121,13 +127,13 @@ export default function Canvas({ store, showGrid, osnap, viewBox, setViewBox, di
       panStartRef.current = { x: e.clientX, y: e.clientY, vbx: viewBox.x, vby: viewBox.y };
       svgRef.current?.setPointerCapture(e.pointerId);
       e.preventDefault();
-    } else if (e.button === 0 && (e.target as SVGElement).tagName === 'svg') {
-      // Begin a potential rectangle selection on empty space.
-      // A click without movement still deselects (existing behaviour);
-      // dragging opens a window/crossing selection rectangle.
+    } else if (e.button === 0) {
+      // Any press that reaches the canvas (empty space, grid, axes — objects
+      // stop propagation) starts a potential pick / window / crossing selection.
       const world = svgToWorld(e.clientX, e.clientY);
-      selStartRef.current = { sx: e.clientX, sy: e.clientY, wx: world.x, wy: world.y };
+      selStartRef.current = { sx: e.clientX, sy: e.clientY, wx: world.x, wy: world.y, additive: e.ctrlKey || e.metaKey };
       svgRef.current?.setPointerCapture(e.pointerId);
+      e.preventDefault();
     }
   }, [viewBox, svgToWorld]);
 
@@ -158,12 +164,20 @@ export default function Canvas({ store, showGrid, osnap, viewBox, setViewBox, di
         const snapped = osnap && !e.altKey
           ? findObjectSnap(comp, raw, store.project.components, {
               tolerance: SNAP_APERTURE_PX * px,
-              excludeIds: linkedIds(comp.id, store.project.components),
+              excludeIds: new Set([comp.id, ...dragStartRef.current.others.map(o => o.id)]
+                .flatMap(id => [...linkedIds(id, store.project.components)])),
               nodes: [{ x: 0, y: 0 }],
             })
           : null;
         setSnap(snapped ? { ...snapped, px } : null);
-        store.updateComponent(dragId, { position: snapped?.position ?? raw }, { history: false });
+        const target = snapped?.position ?? raw;
+        // Move every other selected object by the same (snapped) displacement.
+        const ddx = target.x - dragStartRef.current.ox;
+        const ddy = target.y - dragStartRef.current.oy;
+        store.moveComponents([
+          { id: dragId, position: target },
+          ...dragStartRef.current.others.map(o => ({ id: o.id, position: { x: o.x + ddx, y: o.y + ddy } })),
+        ], { history: false });
       }
       return;
     }
@@ -172,10 +186,11 @@ export default function Canvas({ store, showGrid, osnap, viewBox, setViewBox, di
     const start = selStartRef.current;
     if (start) {
       const movedPx = Math.hypot(e.clientX - start.sx, e.clientY - start.sy);
-      if (movedPx > 3) {
+      if (movedPx > DRAG_THRESHOLD_PX || selRectRef.current) {
+        // Left → right = Window (fully inside); right → left = Crossing.
         const mode: 'window' | 'crossing' = e.clientX >= start.sx ? 'window' : 'crossing';
         const rect: SelectionRect = {
-          x0: start.wx, y0: start.wy, x1: world.x, y1: world.y, mode,
+          x0: start.wx, y0: start.wy, x1: world.x, y1: world.y, mode, additive: start.additive || e.ctrlKey || e.metaKey,
         };
         selRectRef.current = rect;
         setSelRect(rect);
@@ -196,29 +211,29 @@ export default function Canvas({ store, showGrid, osnap, viewBox, setViewBox, di
       const start = selStartRef.current;
       const rect = selRectRef.current;
       if (rect) {
-        // Window: fully inside; Crossing: inside or touching (AutoCAD rules)
-        const rx0 = Math.min(rect.x0, rect.x1), rx1 = Math.max(rect.x0, rect.x1);
-        const ry0 = Math.min(rect.y0, rect.y1), ry1 = Math.max(rect.y0, rect.y1);
-        const ids: string[] = [];
-        for (const comp of store.project.components) {
-          if (!comp.visible || comp.locked) continue;
-          const outline = computeComponentProps(comp).outline;
-          if (outline.length === 0) continue;
-          const hit = rect.mode === 'window'
-            ? polygonInsideRect(outline, rx0, ry0, rx1, ry1)
-            : polygonIntersectsRect(outline, rx0, ry0, rx1, ry1);
-          if (hit) ids.push(comp.id);
-        }
-        store.selectComponents(ids);
+        const ids = selectByRect(store.project.components, rect, rect.mode);
+        store.selectComponents(rect.additive ? [...new Set([...store.selectedIds, ...ids])] : ids);
       } else {
-        // Simple click on empty canvas — deselect (existing behaviour)
-        store.selectComponent(null);
+        // Click: pick-box selection near edges/nodes, otherwise deselect.
+        const world = svgToWorld(e.clientX, e.clientY);
+        const picked = pickComponent(store.project.components, world, PICKBOX_PX / getViewTransform().scale);
+        if (picked) {
+          if (start.additive) {
+            store.selectComponents(store.selectedIds.includes(picked.id)
+              ? store.selectedIds.filter(id => id !== picked.id)
+              : [...store.selectedIds, picked.id]);
+          } else {
+            store.selectComponent(picked.id);
+          }
+        } else if (!start.additive) {
+          store.selectComponent(null);
+        }
       }
       selStartRef.current = null;
       selRectRef.current = null;
       setSelRect(null);
     }
-  }, [dragId, store]);
+  }, [dragId, store, svgToWorld, getViewTransform]);
 
   // Escape cancels an in-progress rectangle selection
   useEffect(() => {
@@ -250,18 +265,35 @@ export default function Canvas({ store, showGrid, osnap, viewBox, setViewBox, di
       store.selectComponent(id);
       return;
     }
-    if (comp.locked) return;
-    if (!store.selectedIds.includes(id)) store.selectComponent(id);
+    if (comp.locked) {
+      // Locked (frozen) objects can be selected to inspect, but not moved.
+      store.selectComponent(id);
+      return;
+    }
+    const alreadySelected = store.selectedIds.includes(id);
+    if (!alreadySelected) store.selectComponent(id);
     // One undo entry per drag (moves during the drag skip history)
     store.pushUndoSnapshot();
     const world = svgToWorld(e.clientX, e.clientY);
-    dragStartRef.current = { x: world.x, y: world.y, ox: comp.position.x, oy: comp.position.y };
+    // Dragging one object of a multi-selection moves the whole selection.
+    const others = alreadySelected
+      ? store.project.components
+          .filter(c => c.id !== id && store.selectedIds.includes(c.id) && !c.locked && !c.managedByParent)
+          .map(c => ({ id: c.id, x: c.position.x, y: c.position.y }))
+      : [];
+    dragStartRef.current = { x: world.x, y: world.y, ox: comp.position.x, oy: comp.position.y, others };
     setDragId(id);
     // Capture the pointer so the drag keeps tracking outside the canvas
     svgRef.current?.setPointerCapture(e.pointerId);
   }, [store, svgToWorld]);
 
   const gridSize = getGridSize(viewBox.w);
+
+  // Live selection preview: objects that the current window/crossing would select.
+  const previewIds = useMemo(
+    () => new Set(selRect ? selectByRect(store.project.components, selRect, selRect.mode) : []),
+    [selRect, store.project.components],
+  );
 
   const selBox = selRect ? {
     x: Math.min(selRect.x0, selRect.x1),
@@ -311,6 +343,7 @@ export default function Canvas({ store, showGrid, osnap, viewBox, setViewBox, di
               key={comp.id}
               comp={comp}
               selected={store.selectedIds.includes(comp.id)}
+              preview={previewIds.has(comp.id)}
               strokeWidth={viewBox.w * 0.002}
               fontScale={dimensionFontScale}
               onPointerDown={(e) => startDrag(comp.id, e)}
@@ -405,7 +438,7 @@ export default function Canvas({ store, showGrid, osnap, viewBox, setViewBox, di
               textAnchor="middle"
               fontFamily="JetBrains Mono, monospace"
             >
-              {selRect.mode === 'window' ? 'WINDOW' : 'CROSSING'} · {selBox.w.toFixed(1)} × {selBox.h.toFixed(1)}
+              {selRect.mode === 'window' ? 'WINDOW' : 'CROSSING'}{selRect.additive ? ' (+)' : ''} · {selBox.w.toFixed(1)} × {selBox.h.toFixed(1)} · {previewIds.size} object{previewIds.size === 1 ? '' : 's'}
             </text>
           </g>
         )}
@@ -427,9 +460,11 @@ export default function Canvas({ store, showGrid, osnap, viewBox, setViewBox, di
   );
 }
 
-function ComponentRenderer({ comp, selected, strokeWidth, fontScale, onPointerDown }: {
+function ComponentRenderer({ comp, selected, preview = false, strokeWidth, fontScale, onPointerDown }: {
   comp: SectionComponent;
   selected: boolean;
+  /** Highlighted as part of the in-progress selection window. */
+  preview?: boolean;
   strokeWidth: number;
   fontScale: number;
   onPointerDown: (e: React.PointerEvent) => void;
@@ -440,7 +475,9 @@ function ComponentRenderer({ comp, selected, strokeWidth, fontScale, onPointerDo
   const isLocked = comp.locked;
 
   const fillColor = isSubtract ? 'rgba(239,68,68,0.15)' : 'rgba(59,130,246,0.15)';
-  const strokeColor = selected
+  const strokeColor = preview && !selected
+    ? '#22d3ee'
+    : selected
     ? '#fbbf24'
     : isLocked ? '#f59e0b' : isSubtract ? '#ef4444' : '#3b82f6';
 
@@ -469,9 +506,9 @@ function ComponentRenderer({ comp, selected, strokeWidth, fontScale, onPointerDo
       <path
         d={d}
         fillRule="evenodd"
-        fill={fillColor}
+        fill={preview && !selected ? 'rgba(34,211,238,0.18)' : fillColor}
         stroke={strokeColor}
-        strokeWidth={strokeWidth}
+        strokeWidth={preview && !selected ? strokeWidth * 1.8 : strokeWidth}
         strokeLinejoin="round"
       />
       {selected && (

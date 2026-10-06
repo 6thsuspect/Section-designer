@@ -5,6 +5,7 @@ import { synchronizeBoltDeductions, withEdgeDistance, withEdge2Distance, withRef
 import { combineComponents, uncombineComponent, synchronizeCombinedCutouts, signedArea, deleteCombinedVoid, deleteCombinedCutout, voidAtPoint, combinedPieceCount, removeOverlappingPortion } from '../src/engine/combine.ts';
 import { findObjectSnap, componentSnapFeatures } from '../src/engine/osnap.ts';
 import { formatCoordinates } from '../src/engine/coordinateClipboard.ts';
+import { selectByRect, pickComponent } from '../src/engine/selection.ts';
 import type { SectionComponent, SectionProperties } from '../src/engine/types.ts';
 
 let failures = 0;
@@ -616,6 +617,40 @@ function mkComp(geometry: SectionComponent['geometry'], type: SectionComponent['
   const pts = [{ x: '0', y: '0' }, { x: ' 100.5 ', y: '-20' }, { x: 3, y: 4 }];
   checkTrue('copy format x, y', formatCoordinates(pts, 'comma') === '0, 0\n100.5, -20\n3, 4');
   checkTrue('copy format tab', formatCoordinates(pts, 'tab') === '0\t0\n100.5\t-20\n3\t4');
+}
+
+// ─── Test 17: AutoCAD window / crossing / pick selection ──────────────────
+{
+  const at = (c: SectionComponent, x: number, y: number, id: string): SectionComponent => ({ ...c, id, position: { x, y } });
+  const A = at(mkComp({ width: 100, height: 20 }), 0, 0, 'A');          // x −50…50, y −10…10
+  const B = at(mkComp({ width: 20, height: 100 }), 200, 0, 'B');        // x 190…210, y −50…50
+  const C = at(mkComp({ radius: 30 }, 'circle'), 0, 200, 'C');
+  const L = { ...at(mkComp({ width: 10, height: 10 }), 0, -100, 'L'), locked: true };
+  const H = { ...at(mkComp({ width: 10, height: 10 }), 50, -100, 'H'), visible: false };
+  const comps = [A, B, C, L, H];
+  const rect = { x0: -60, y0: -20, x1: 205, y1: 60 };
+  checkTrue('window selects only fully-inside objects', JSON.stringify(selectByRect(comps, rect, 'window')) === '["A"]');
+  checkTrue('crossing adds partially-intersecting objects', JSON.stringify(selectByRect(comps, rect, 'crossing')) === '["A","B"]');
+  checkTrue('crossing rect wholly inside a plate selects it', JSON.stringify(selectByRect(comps, { x0: -5, y0: -5, x1: 5, y1: 5 }, 'crossing')) === '["A"]');
+  checkTrue('window rect inside a plate selects nothing', selectByRect(comps, { x0: -5, y0: -5, x1: 5, y1: 5 }, 'window').length === 0);
+  checkTrue('crossing touches circle edge', selectByRect(comps, { x0: 25, y0: 190, x1: 40, y1: 210 }, 'crossing').includes('C'));
+  checkTrue('locked/hidden excluded from window', !selectByRect(comps, { x0: -500, y0: -500, x1: 500, y1: 500 }, 'window').some(id => id === 'L' || id === 'H'));
+  checkTrue('pick inside', pickComponent(comps, { x: 10, y: 0 }, 1)?.id === 'A');
+  checkTrue('pick-box near thin plate edge', pickComponent(comps, { x: 187, y: 0 }, 4)?.id === 'B');
+  checkTrue('pick miss outside pick-box', pickComponent(comps, { x: 180, y: 0 }, 4) === null);
+
+  // Combined box section: crossing over the void must not hit via keyhole bridges.
+  const plates = [
+    at(mkComp({ width: 200, height: 20 }), 0, 140, 'p1'), at(mkComp({ width: 200, height: 20 }), 0, -140, 'p2'),
+    at(mkComp({ width: 20, height: 260 }), -90, 0, 'p3'), at(mkComp({ width: 20, height: 260 }), 90, 0, 'p4'),
+  ];
+  const box = combineComponents(plates, plates.map(p => p.id), 'bx');
+  if (box.ok) {
+    checkTrue('crossing inside void does not select combined box', selectByRect(box.components, { x0: -20, y0: -20, x1: 20, y1: 20 }, 'crossing').length === 0);
+    checkTrue('crossing through wall selects combined box', JSON.stringify(selectByRect(box.components, { x0: 70, y0: -5, x1: 85, y1: 5 }, 'crossing')) === '["bx"]');
+    checkTrue('click in void does not pick', pickComponent(box.components, { x: 0, y: 0 }, 2) === null);
+    checkTrue('window around box selects it', JSON.stringify(selectByRect(box.components, { x0: -101, y0: -151, x1: 101, y1: 151 }, 'window')) === '["bx"]');
+  }
 }
 
 console.log(failures === 0 ? '\nALL CHECKS PASSED' : `\n${failures} CHECKS FAILED`);
