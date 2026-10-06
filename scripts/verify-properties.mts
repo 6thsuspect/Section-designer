@@ -10,6 +10,9 @@ import { computeCgDimensions, isNearCg } from '../src/engine/cgDimensions.ts';
 import { guideFeatures, referenceFeatures, findAlignment, computeGuides, hoverSource, translateFeatures, perpendicularFoot } from '../src/engine/guides.ts';
 import { DEFAULT_DOCK_LAYOUT, computeDockZones, hitDockZone, dockPanel, floatPanel, toggleFloat, panelsOnSide, floatingPanels, clampFloatRect, normalizeDockLayout, dockPreviewRect, setSideSize, setPanelOpen } from '../src/engine/dockLayout.ts';
 import { resolveCanvasPalette, normalizeCanvasThemeSettings, editCanvasColor, normalizeHex, DEFAULT_CANVAS_THEME } from '../src/engine/canvasTheme.ts';
+import { computeSheetLayout, formatEngineering, sheetPropertyGroups, sheetLines, splitColumns, sheetDate, SHEET } from '../src/engine/pdfSheet.ts';
+import { renderSectionSheet } from '../src/engine/pdfSheetRender.ts';
+import { jsPDF } from 'jspdf';
 import type { SectionComponent, SectionProperties } from '../src/engine/types.ts';
 
 let failures = 0;
@@ -789,6 +792,42 @@ function mkComp(geometry: SectionComponent['geometry'], type: SectionComponent['
     const db = computeCgDimensions(box.components, { x: 0, y: 0 })!;
     checkTrue('combined box CG dims 100/100/150/150', [db.left.distance, db.right.distance, db.top.distance, db.bottom.distance].every((v, i) => Math.abs(v - [100, 100, 150, 150][i]) < 1e-6));
   }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Test 22: single-page PDF section sheet (layout, number format, one page)
+// ─────────────────────────────────────────────────────────────────────────────
+{
+  console.log('\nTest 22: single-page PDF section sheet');
+  const inside = (a: { x: number; y: number; w: number; h: number }, b: { x: number; y: number; w: number; h: number }) =>
+    a.x >= b.x - 1e-9 && a.y >= b.y - 1e-9 && a.x + a.w <= b.x + b.w + 1e-9 && a.y + a.h <= b.y + b.h + 1e-9;
+  const page = { x: SHEET.margin, y: SHEET.margin, w: SHEET.pageW - 2 * SHEET.margin, h: SHEET.pageH - 2 * SHEET.margin };
+  for (const [label, w, h] of [['wide', 900, 145], ['tall', 50, 1200], ['square', 300, 300], ['tiny', 1, 1]] as const) {
+    const L = computeSheetLayout(w, h, 18);
+    const fitsW = w * L.scale <= L.drawing.w + 1e-6, fitsH = h * L.scale <= L.drawing.h + 1e-6;
+    checkTrue(`${label}: frames inside margins, no overlap, figure fits`,
+      inside(L.figure, page) && inside(L.properties, page) && L.figure.y + L.figure.h < L.properties.y
+      && inside(L.drawing, L.figure) && fitsW && fitsH && L.titleY < L.figure.y && L.dateY > L.properties.y + L.properties.h);
+    checkTrue(`${label}: scale touches one drawing limit`, Math.abs(w * L.scale - L.drawing.w) < 1e-6 || Math.abs(h * L.scale - L.drawing.h) < 1e-6);
+  }
+  const crowded = computeSheetLayout(100, 100, 40);
+  checkTrue('many rows: row height tightens, figure keeps its minimum', crowded.rowH < SHEET.rowH && crowded.figure.h >= SHEET.minFigureH - 1e-9);
+  const f = (v: number, p = false) => { const e = formatEngineering(v, p); return e.exponent === null ? e.mantissa : `${e.mantissa}e${e.exponent}`; };
+  checkTrue('engineering format', f(11760) === '11760.0' && f(1.685e8) === '1.685e8' && f(39696.9, true) === '3.970e4'
+    && f(0) === '0' && f(-8.17) === '-8.170' && f(9999.6, true) === '1.000e4' && f(250, true) === '250.00', [f(11760), f(1.685e8), f(39696.9, true), f(-8.17), f(9999.6, true), f(250, true)].join(' '));
+  const at = (c: SectionComponent, x: number, y: number, id: string): SectionComponent => ({ ...c, id, position: { x, y } });
+  const T = [at(mkComp({ width: 300, height: 20 }), 0, 190, 'f'), at(mkComp({ width: 16, height: 360 }), 0, 0, 'w')];
+  const props = computeSectionProperties(T).props;
+  const groups = sheetPropertyGroups(props, 'mm');
+  const lines = sheetLines(groups);
+  const [colA, colB] = splitColumns(lines);
+  checkTrue('6 groups, every row once, columns start with a heading',
+    groups.length === 6 && colA.length + colB.length === lines.length && colA[0].kind === 'heading' && colB[0]?.kind === 'heading');
+  checkTrue('date format', sheetDate(new Date('2026-10-07T10:00:00')) === '7 October 2026');
+  const project = { name: 'T-Section', description: '', units: 'mm', revision: 1, components: T, materials: [] } as unknown as Parameters<typeof renderSectionSheet>[2];
+  const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+  renderSectionSheet(doc, props, project, new Date('2026-10-07T10:00:00'));
+  checkTrue('renders exactly one A4 page', doc.getNumberOfPages() === 1);
 }
 
 console.log(failures === 0 ? '\nALL CHECKS PASSED' : `\n${failures} CHECKS FAILED`);

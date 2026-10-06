@@ -12,7 +12,7 @@ import SettingsDialog, { type AppSettings } from '@/components/SettingsDialog';
 import CustomShapeDialog from '@/components/CustomShapeDialog';
 import AboutDialog from '@/components/AboutDialog';
 import ImportDialog from '@/components/ImportDialog';
-import { downloadJSON, downloadCSV, exportPDF, downloadDXF, exportExcel } from '@/engine/exporters';
+import { downloadJSON, downloadCSV, exportPDF, exportDetailedPDF, downloadDXF, exportExcel } from '@/engine/exporters';
 import { computeSectionProperties } from '@/engine/geometry';
 import type { Point, SectionProject, SectionComponent } from '@/engine/types';
 import { DEFAULT_CANVAS_THEME, normalizeCanvasThemeSettings, resolveCanvasPalette } from '@/engine/canvasTheme';
@@ -257,7 +257,15 @@ export default function Home() {
       alert('No section properties to export. Add components first.');
       return;
     }
-    exportPDF(
+    exportPDF(store.properties, store.project);
+  }, [store.properties, store.project]);
+
+  const handleExportDetailedPDF = useCallback(() => {
+    if (!store.properties) {
+      alert('No section properties to export. Add components first.');
+      return;
+    }
+    exportDetailedPDF(
       store.properties,
       store.project,
       store.calcTrace,
@@ -481,6 +489,7 @@ export default function Home() {
         onExportJSON={handleExportJSON}
         onExportCSV={handleExportCSV}
         onExportPDF={handleExportPDF}
+        onExportDetailedPDF={handleExportDetailedPDF}
         onExportDXF={handleExportDXF}
         onExportExcel={handleExportExcel}
         onImportFile={() => setShowImport(true)}

@@ -323,7 +323,7 @@ Supported project and engineering exports include:
   -------- -------------------------------
   JSON     Editable project/section file
   DXF      CAD geometry
-  PDF      Engineering report
+  PDF      Section sheet / report
   Excel    Calculation workbook
   CSV      Tabular section data
 
@@ -332,16 +332,30 @@ evolved safely.
 
 ### PDF reports
 
-PDF export is intended to include:
+**Export PDF** produces a single-page A4 *section sheet* in a minimalist
+technical-document style:
 
--   Project information
--   Section drawing
--   Component information
--   Section properties
--   Calculation information
--   Engineering results
+-   Section name top-left, date bottom-right; no logo, header, footer,
+    page numbers or colour.
+-   A thin-bordered figure frame with the section drawn to scale (light grey
+    fill, cut-outs white), the centroid marked **CG**, the principal axes
+    *u*/*v* (only when they differ from Y/Z, clipped to the section) and the
+    overall width / height dimensions.
+-   A separate thin-bordered properties box: geometry, second moments, radii
+    of gyration, elastic and plastic moduli and extreme-fibre distances in two
+    columns, with italic symbols, right-aligned values and proper
+    × 10ⁿ / mm⁴ typesetting.
+-   Automatic layout: the property box takes the height its rows need, the
+    figure frame fills the rest and the section is scaled and centred to fit,
+    so wide, tall and square sections all stay on one balanced page.
 
-The PDF exporter uses `jsPDF` and `jspdf-autotable`.
+**Detailed PDF Report** (same menu) keeps the previous multi-page report with
+project information, component table, calculation trace and results.
+
+The layout and formatting logic is in `src/engine/pdfSheet.ts` (tested in
+`npm run test:engineering`, Test 22); drawing is in
+`src/engine/pdfSheetRender.ts`. Both reports use `jsPDF` (the detailed
+report also uses `jspdf-autotable`).
 
 ### DXF import and export
 
