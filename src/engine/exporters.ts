@@ -894,7 +894,27 @@ async function loadLogoDataUrl(): Promise<{ dataUrl: string; w: number; h: numbe
   }
 }
 
-export async function exportPDF(
+/**
+ * Single-page technical sheet (default PDF export): section name top-left,
+ * date bottom-right, thin-bordered figure and thin-bordered property table.
+ */
+export async function exportPDF(props: SectionProperties, project: SectionProject): Promise<void> {
+  try {
+    const { default: jsPDF } = await import('jspdf');
+    const { renderSectionSheet } = await import('./pdfSheetRender');
+    const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+    doc.setProperties({ title: project.name, subject: 'Section properties', creator: 'Section Designer' });
+    renderSectionSheet(doc, props, project, new Date());
+    doc.save(`${project.name.replace(/\s+/g, '_')}_section.pdf`);
+  } catch (error) {
+    console.error('PDF export failed:', error);
+    const message = error instanceof Error ? error.message : String(error);
+    alert(`PDF export failed:\n${message}`);
+  }
+}
+
+/** Multi-page detailed report (components, vertices, trace, stresses). */
+export async function exportDetailedPDF(
   props: SectionProperties,
   project: SectionProject,
   trace: CalcTrace | null,

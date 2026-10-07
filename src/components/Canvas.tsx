@@ -1,15 +1,46 @@
 'use client';
-import React, { useRef, useState, useCallback, useEffect } from 'react';
+import React, { useRef, useState, useCallback, useEffect, useMemo } from 'react';
 import type { StoreState } from '@/store/useStore';
 import type { Point, SectionComponent } from '@/engine/types';
-import { computeComponentProps, polygonInsideRect, polygonIntersectsRect } from '@/engine/geometry';
+import { computeComponentProps } from '@/engine/geometry';
+import { pickComponent, selectByRect } from '@/engine/selection';
+
+/** Pick-box half size in screen pixels for click selection near edges/nodes. */
+const PICKBOX_PX = 5;
+/** Movement (px) before a press on empty space becomes a selection window. */
+const DRAG_THRESHOLD_PX = 3;
+import { combinedVoids, componentRenderRings } from '@/engine/combine';
+import { findObjectSnap, linkedIds, SNAP_LABELS, type SnapResult } from '@/engine/osnap';
+
+/** Snap aperture in screen pixels (AutoCAD APERTURE default ≈ 10). */
+const SNAP_APERTURE_PX = 12;
+/** Object-snap tracking: X/Y alignment aperture (px). */
+const GUIDE_ALIGN_PX = 8;
+/** Max length of perpendicular face guides (px). */
+const GUIDE_PERP_PX = 220;
+/** How close the cursor must be to the selected object to show hover guides (px). */
+const GUIDE_HOVER_APERTURE_PX = 14;
+/** Hover aperture around the CG marker that reveals the CG dimensions (px). */
+const CG_HOVER_PX = 12;
+
+import { computeCgDimensions, isNearCg, type CgDimensions } from '@/engine/cgDimensions';
+import { computeGuides, findAlignment, guideFeatures, hoverSource, referenceFeatures, translateFeatures, type Guide, type GuideFeatures, type RefFeatures } from '@/engine/guides';
+import { resolveCanvasPalette, DEFAULT_CANVAS_THEME, type CanvasPalette } from '@/engine/canvasTheme';
+
+const DEFAULT_PALETTE = resolveCanvasPalette(DEFAULT_CANVAS_THEME);
 
 interface Props {
   store: StoreState;
   showGrid: boolean;
+  /** Object Snap enabled (OSNAP / F3). */
+  osnap: boolean;
+  /** Show OSNAP dimensions / labels (independent of snapping). Default true. */
+  osnapLabels?: boolean;
   viewBox: { x: number; y: number; w: number; h: number };
-  setViewBox: (vb: { x: number; y: number; w: number; h: number }) => void;
+  setViewBox: React.Dispatch<React.SetStateAction<{ x: number; y: number; w: number; h: number }>>;
   dimensionFontScale: number;
+  /** Canvas colour theme (presentation only). */
+  palette?: CanvasPalette;
 }
 
 const GRID_SIZES = [10, 25, 50, 100, 250, 500, 1000];
@@ -19,19 +50,41 @@ function getGridSize(viewW: number): number {
   return GRID_SIZES.find(s => s >= target) ?? 1000;
 }
 
-type SelectionRect = { x0: number; y0: number; x1: number; y1: number; mode: 'window' | 'crossing' } | null;
+type SelectionRect = { x0: number; y0: number; x1: number; y1: number; mode: 'window' | 'crossing'; additive: boolean } | null;
 
-export default function Canvas({ store, showGrid, viewBox, setViewBox, dimensionFontScale }: Props) {
+export default function Canvas({ store, showGrid, osnap, osnapLabels = true, viewBox, setViewBox, dimensionFontScale, palette: paletteProp }: Props) {
+  const palette = paletteProp ?? DEFAULT_PALETTE;
   const svgRef = useRef<SVGSVGElement>(null);
   const [isPanning, setIsPanning] = useState(false);
   const panStartRef = useRef<{ x: number; y: number; vbx: number; vby: number }>({ x: 0, y: 0, vbx: 0, vby: 0 });
   const [dragId, setDragId] = useState<string | null>(null);
-  const dragStartRef = useRef<{ x: number; y: number; ox: number; oy: number }>({ x: 0, y: 0, ox: 0, oy: 0 });
+  const dragStartRef = useRef<{ x: number; y: number; ox: number; oy: number; others: { id: string; x: number; y: number }[] }>({ x: 0, y: 0, ox: 0, oy: 0, others: [] });
   const [mouseWorld, setMouseWorld] = useState<Point>({ x: 0, y: 0 });
+  // Active snap plus world-units-per-pixel at detection time (for glyph sizing).
+  const [snap, setSnap] = useState<(SnapResult & { px: number }) | null>(null);
+  // Dynamic object-snap guide lines (drag / hover), with world-units-per-pixel.
+  const [dragGuides, setDragGuides] = useState<{ guides: Guide[]; px: number } | null>(null);
+  const [hoverGuides, setHoverGuides] = useState<{ guides: Guide[]; px: number; key: string } | null>(null);
+  // Geometry captured at drag start: moving features (at start position) + static references.
+  const guideDragRef = useRef<{ base: GuideFeatures; refs: RefFeatures[] } | null>(null);
+
+  // Canvas element size (for zoom-aware sizes during render) + pointer presence.
+  const [svgSize, setSvgSize] = useState<{ w: number; h: number }>({ w: 0, h: 0 });
+  const [pointerInside, setPointerInside] = useState(false);
+  useEffect(() => {
+    const svg = svgRef.current;
+    if (!svg || typeof ResizeObserver === 'undefined') return;
+    const ro = new ResizeObserver(entries => {
+      const r = entries[0]?.contentRect;
+      if (r) setSvgSize({ w: r.width, h: r.height });
+    });
+    ro.observe(svg);
+    return () => ro.disconnect();
+  }, []);
 
   // Rectangular (AutoCAD-style) selection state
   const [selRect, setSelRect] = useState<SelectionRect>(null);
-  const selStartRef = useRef<{ sx: number; sy: number; wx: number; wy: number } | null>(null);
+  const selStartRef = useRef<{ sx: number; sy: number; wx: number; wy: number; additive: boolean } | null>(null);
   const selRectRef = useRef<SelectionRect>(null);
 
   // ─── Screen ↔ world transform ────────────────────────────────────────────
@@ -64,24 +117,62 @@ export default function Canvas({ store, showGrid, viewBox, setViewBox, dimension
     };
   }, [getViewTransform, viewBox]);
 
-  // Non-passive wheel listener so preventDefault works while zooming
+  // AutoCAD-style cursor-anchored wheel zoom. Work entirely in SVG viewBox
+  // coordinates here (whose Y points down); mixing engineering Y-up values
+  // into viewBox.y was the source of the previous vertical cursor drift.
   useEffect(() => {
     const svg = svgRef.current;
     if (!svg) return;
     const onWheel = (e: WheelEvent) => {
       e.preventDefault();
-      const factor = e.deltaY > 0 ? 1.1 : 0.9;
-      const world = svgToWorld(e.clientX, e.clientY);
-      setViewBox({
-        x: world.x - (world.x - viewBox.x) * factor,
-        y: world.y - (world.y - viewBox.y) * factor,
-        w: viewBox.w * factor,
-        h: viewBox.h * factor,
+      setViewBox(current => {
+        const rect = svg.getBoundingClientRect();
+        if (rect.width <= 0 || rect.height <= 0) return current;
+
+        const scale = Math.min(rect.width / current.w, rect.height / current.h);
+        const offX = (rect.width - current.w * scale) / 2;
+        const offY = (rect.height - current.h * scale) / 2;
+        const cursorX = current.x + (e.clientX - rect.left - offX) / scale;
+        const cursorY = current.y + (e.clientY - rect.top - offY) / scale;
+
+        // Exponential scaling handles both wheel notches and high-resolution
+        // trackpads smoothly. Negative delta (wheel up) zooms in.
+        const wheelDelta = e.deltaMode === WheelEvent.DOM_DELTA_LINE
+          ? e.deltaY * 16
+          : e.deltaMode === WheelEvent.DOM_DELTA_PAGE ? e.deltaY * rect.height : e.deltaY;
+        const requestedFactor = Math.max(0.5, Math.min(2, Math.exp(wheelDelta * 0.0015)));
+        const nextWidth = Math.max(1e-4, Math.min(1e12, current.w * requestedFactor));
+        const factor = nextWidth / current.w;
+        const nextHeight = current.h * factor;
+
+        return {
+          x: cursorX - (cursorX - current.x) * factor,
+          y: cursorY - (cursorY - current.y) * factor,
+          w: nextWidth,
+          h: nextHeight,
+        };
       });
     };
     svg.addEventListener('wheel', onWheel, { passive: false });
     return () => svg.removeEventListener('wheel', onWheel);
-  }, [svgToWorld, viewBox, setViewBox]);
+  }, [setViewBox]);
+
+  // Reference geometry for hover guides around the current selection.
+  const selectionKey = store.selectedIds.join('|');
+  const hoverGeometry = useMemo(() => {
+    if (!osnap || store.selectedIds.length === 0) return null;
+    const comps = store.project.components;
+    const selected = comps.filter(c => c.visible && store.selectedIds.includes(c.id));
+    if (selected.length === 0) return null;
+    const exclude = new Set(selected.flatMap(c => [...linkedIds(c.id, comps)]));
+    const merged: GuideFeatures = { points: [], segments: [] };
+    for (const c of selected) {
+      const f = guideFeatures(c);
+      merged.points.push(...f.points);
+      merged.segments.push(...f.segments);
+    }
+    return { selected: merged, refs: referenceFeatures(comps, exclude) };
+  }, [osnap, store.selectedIds, store.project.components]);
 
   // ─── Pointer interactions ────────────────────────────────────────────────
   const handlePointerDown = useCallback((e: React.PointerEvent) => {
@@ -91,19 +182,20 @@ export default function Canvas({ store, showGrid, viewBox, setViewBox, dimension
       panStartRef.current = { x: e.clientX, y: e.clientY, vbx: viewBox.x, vby: viewBox.y };
       svgRef.current?.setPointerCapture(e.pointerId);
       e.preventDefault();
-    } else if (e.button === 0 && (e.target as SVGElement).tagName === 'svg') {
-      // Begin a potential rectangle selection on empty space.
-      // A click without movement still deselects (existing behaviour);
-      // dragging opens a window/crossing selection rectangle.
+    } else if (e.button === 0) {
+      // Any press that reaches the canvas (empty space, grid, axes — objects
+      // stop propagation) starts a potential pick / window / crossing selection.
       const world = svgToWorld(e.clientX, e.clientY);
-      selStartRef.current = { sx: e.clientX, sy: e.clientY, wx: world.x, wy: world.y };
+      selStartRef.current = { sx: e.clientX, sy: e.clientY, wx: world.x, wy: world.y, additive: e.ctrlKey || e.metaKey };
       svgRef.current?.setPointerCapture(e.pointerId);
+      e.preventDefault();
     }
   }, [viewBox, svgToWorld]);
 
   const handlePointerMove = useCallback((e: React.PointerEvent) => {
     const world = svgToWorld(e.clientX, e.clientY);
     setMouseWorld(world);
+    setPointerInside(true);
 
     if (isPanning) {
       const { scale } = getViewTransform();
@@ -122,30 +214,96 @@ export default function Canvas({ store, showGrid, viewBox, setViewBox, dimension
       if (comp && !comp.locked) {
         const dx = world.x - dragStartRef.current.x;
         const dy = world.y - dragStartRef.current.y;
-        store.updateComponent(dragId, {
-          position: {
-            x: dragStartRef.current.ox + dx,
-            y: dragStartRef.current.oy + dy,
-          },
-        }, { history: false });
+        const raw = { x: dragStartRef.current.ox + dx, y: dragStartRef.current.oy + dy };
+        // Alt while dragging temporarily overrides OSNAP (free move).
+        const px = 1 / getViewTransform().scale;
+        const snapped = osnap && !e.altKey
+          ? findObjectSnap(comp, raw, store.project.components, {
+              tolerance: SNAP_APERTURE_PX * px,
+              excludeIds: new Set([comp.id, ...dragStartRef.current.others.map(o => o.id)]
+                .flatMap(id => [...linkedIds(id, store.project.components)])),
+              nodes: [{ x: 0, y: 0 }],
+            })
+          : null;
+        setSnap(snapped ? { ...snapped, px } : null);
+        let target = snapped?.position ?? raw;
+        // Object-snap tracking: without a point snap, pull the object onto the
+        // X / Y of nearby reference points, then show the guide lines.
+        const gd = guideDragRef.current;
+        if (osnap && !e.altKey && gd) {
+          const origin = { x: dragStartRef.current.ox, y: dragStartRef.current.oy };
+          if (!snapped) {
+            const moving = translateFeatures(gd.base, { x: raw.x - origin.x, y: raw.y - origin.y });
+            const align = findAlignment(moving.points, gd.refs, GUIDE_ALIGN_PX * px);
+            target = { x: raw.x + (align.dx ?? 0), y: raw.y + (align.dy ?? 0) };
+          }
+          const placed = translateFeatures(gd.base, { x: target.x - origin.x, y: target.y - origin.y });
+          setDragGuides({
+            guides: computeGuides(placed, gd.refs, {
+              alignTolerance: Math.max(1e-9, 0.25 * px),
+              perpRadius: GUIDE_PERP_PX * px,
+              maxPerpendicular: 3,
+            }),
+            px,
+          });
+        } else {
+          setDragGuides(null);
+        }
+        // Move every other selected object by the same (snapped) displacement.
+        const ddx = target.x - dragStartRef.current.ox;
+        const ddy = target.y - dragStartRef.current.oy;
+        store.moveComponents([
+          { id: dragId, position: target },
+          ...dragStartRef.current.others.map(o => ({ id: o.id, position: { x: o.x + ddx, y: o.y + ddy } })),
+        ], { history: false });
       }
       return;
+    }
+
+    // Hover guides: from the selected object's point under the cursor.
+    if (hoverGeometry && !selStartRef.current) {
+      const px = 1 / getViewTransform().scale;
+      const source = hoverSource(hoverGeometry.selected, world, GUIDE_HOVER_APERTURE_PX * px);
+      if (source) {
+        const onFace = hoverGeometry.selected.segments.filter(s => {
+          const vx = s.b.x - s.a.x, vy = s.b.y - s.a.y;
+          const len = Math.hypot(vx, vy);
+          if (len < 1e-12) return false;
+          const cross = Math.abs((source.x - s.a.x) * vy - (source.y - s.a.y) * vx) / len;
+          const t = ((source.x - s.a.x) * vx + (source.y - s.a.y) * vy) / (len * len);
+          return cross < 1e-6 * Math.max(1, len) && t >= -1e-9 && t <= 1 + 1e-9;
+        });
+        setHoverGuides({
+          guides: computeGuides({ points: [source], segments: onFace }, hoverGeometry.refs, {
+            alignTolerance: GUIDE_ALIGN_PX * px,
+            perpRadius: GUIDE_PERP_PX * px,
+            maxPerpendicular: 3,
+          }),
+          px,
+          key: selectionKey,
+        });
+      } else if (hoverGuides) {
+        setHoverGuides(null);
+      }
+    } else if (hoverGuides) {
+      setHoverGuides(null);
     }
 
     // Rectangle selection while dragging on empty space
     const start = selStartRef.current;
     if (start) {
       const movedPx = Math.hypot(e.clientX - start.sx, e.clientY - start.sy);
-      if (movedPx > 3) {
+      if (movedPx > DRAG_THRESHOLD_PX || selRectRef.current) {
+        // Left → right = Window (fully inside); right → left = Crossing.
         const mode: 'window' | 'crossing' = e.clientX >= start.sx ? 'window' : 'crossing';
         const rect: SelectionRect = {
-          x0: start.wx, y0: start.wy, x1: world.x, y1: world.y, mode,
+          x0: start.wx, y0: start.wy, x1: world.x, y1: world.y, mode, additive: start.additive || e.ctrlKey || e.metaKey,
         };
         selRectRef.current = rect;
         setSelRect(rect);
       }
     }
-  }, [isPanning, dragId, viewBox, svgToWorld, getViewTransform, setViewBox, store]);
+  }, [isPanning, dragId, viewBox, svgToWorld, getViewTransform, setViewBox, store, osnap, hoverGeometry, hoverGuides, selectionKey]);
 
   const finishPointer = useCallback((e: React.PointerEvent) => {
     if (svgRef.current?.hasPointerCapture(e.pointerId)) {
@@ -155,33 +313,36 @@ export default function Canvas({ store, showGrid, viewBox, setViewBox, dimension
 
     if (dragId) {
       setDragId(null);
+      setSnap(null);
+      setDragGuides(null);
+      guideDragRef.current = null;
     } else if (selStartRef.current) {
       const start = selStartRef.current;
       const rect = selRectRef.current;
       if (rect) {
-        // Window: fully inside; Crossing: inside or touching (AutoCAD rules)
-        const rx0 = Math.min(rect.x0, rect.x1), rx1 = Math.max(rect.x0, rect.x1);
-        const ry0 = Math.min(rect.y0, rect.y1), ry1 = Math.max(rect.y0, rect.y1);
-        const ids: string[] = [];
-        for (const comp of store.project.components) {
-          if (!comp.visible || comp.locked) continue;
-          const outline = computeComponentProps(comp).outline;
-          if (outline.length === 0) continue;
-          const hit = rect.mode === 'window'
-            ? polygonInsideRect(outline, rx0, ry0, rx1, ry1)
-            : polygonIntersectsRect(outline, rx0, ry0, rx1, ry1);
-          if (hit) ids.push(comp.id);
-        }
-        store.selectComponents(ids);
+        const ids = selectByRect(store.project.components, rect, rect.mode);
+        store.selectComponents(rect.additive ? [...new Set([...store.selectedIds, ...ids])] : ids);
       } else {
-        // Simple click on empty canvas — deselect (existing behaviour)
-        store.selectComponent(null);
+        // Click: pick-box selection near edges/nodes, otherwise deselect.
+        const world = svgToWorld(e.clientX, e.clientY);
+        const picked = pickComponent(store.project.components, world, PICKBOX_PX / getViewTransform().scale);
+        if (picked) {
+          if (start.additive) {
+            store.selectComponents(store.selectedIds.includes(picked.id)
+              ? store.selectedIds.filter(id => id !== picked.id)
+              : [...store.selectedIds, picked.id]);
+          } else {
+            store.selectComponent(picked.id);
+          }
+        } else if (!start.additive) {
+          store.selectComponent(null);
+        }
       }
       selStartRef.current = null;
       selRectRef.current = null;
       setSelRect(null);
     }
-  }, [dragId, store]);
+  }, [dragId, store, svgToWorld, getViewTransform]);
 
   // Escape cancels an in-progress rectangle selection
   useEffect(() => {
@@ -200,18 +361,85 @@ export default function Canvas({ store, showGrid, viewBox, setViewBox, dimension
   const startDrag = useCallback((id: string, e: React.PointerEvent) => {
     e.stopPropagation();
     const comp = store.project.components.find(c => c.id === id);
-    if (!comp || comp.locked) return;
-    store.selectComponent(id);
+    if (!comp) return;
+    if (e.ctrlKey || e.metaKey) {
+      // Ctrl/⌘-click toggles the shape in the multi-selection (e.g. to Combine).
+      store.selectComponents(store.selectedIds.includes(id)
+        ? store.selectedIds.filter(x => x !== id)
+        : [...store.selectedIds, id]);
+      return;
+    }
+    if (comp.associationKind === 'combined-cutout' && comp.managedByParent) {
+      // Cut-outs of a combined section are selectable (for Delete Cutout) but not draggable.
+      store.selectComponent(id);
+      return;
+    }
+    if (comp.locked) {
+      // Locked (frozen) objects can be selected to inspect, but not moved.
+      store.selectComponent(id);
+      return;
+    }
+    const alreadySelected = store.selectedIds.includes(id);
+    if (!alreadySelected) store.selectComponent(id);
     // One undo entry per drag (moves during the drag skip history)
     store.pushUndoSnapshot();
     const world = svgToWorld(e.clientX, e.clientY);
-    dragStartRef.current = { x: world.x, y: world.y, ox: comp.position.x, oy: comp.position.y };
+    // Dragging one object of a multi-selection moves the whole selection.
+    const others = alreadySelected
+      ? store.project.components
+          .filter(c => c.id !== id && store.selectedIds.includes(c.id) && !c.locked && !c.managedByParent)
+          .map(c => ({ id: c.id, x: c.position.x, y: c.position.y }))
+      : [];
+    dragStartRef.current = { x: world.x, y: world.y, ox: comp.position.x, oy: comp.position.y, others };
+    // Capture guide geometry once per drag (references do not move).
+    const movingIds = [id, ...others.map(o => o.id)];
+    const base: GuideFeatures = { points: [], segments: [] };
+    for (const mid of movingIds) {
+      const mc = store.project.components.find(c => c.id === mid);
+      if (!mc) continue;
+      const f = guideFeatures(mc);
+      base.points.push(...f.points);
+      base.segments.push(...f.segments);
+    }
+    const exclude = new Set(movingIds.flatMap(mid => [...linkedIds(mid, store.project.components)]));
+    guideDragRef.current = { base, refs: referenceFeatures(store.project.components, exclude) };
+    setHoverGuides(null);
     setDragId(id);
     // Capture the pointer so the drag keeps tracking outside the canvas
     svgRef.current?.setPointerCapture(e.pointerId);
   }, [store, svgToWorld]);
 
   const gridSize = getGridSize(viewBox.w);
+
+  // World units per screen pixel for the current zoom (derived from viewBox +
+  // element size, so overlays track wheel zoom / pan without a mouse move).
+  const pxNow = svgSize.w > 0 && svgSize.h > 0
+    ? 1 / Math.min(svgSize.w / viewBox.w, svgSize.h / viewBox.h)
+    : 1;
+  const cgPoint = store.properties && store.properties.area > 0
+    ? { x: store.properties.centroidX, y: store.properties.centroidY }
+    : null;
+  const cgHover = !!cgPoint && pointerInside && !dragId && !isPanning && !selRect
+    && isNearCg(mouseWorld, cgPoint, Math.max(CG_HOVER_PX * pxNow, viewBox.w * 0.015 * 1.2));
+  const cgDims = useMemo<CgDimensions | null>(
+    () => (cgHover && cgPoint ? computeCgDimensions(store.project.components, cgPoint) : null),
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- cgPoint is derived from properties
+    [cgHover, store.project.components, store.properties],
+  );
+
+  // Guides shown now: drag guides while dragging, otherwise hover guides for
+  // the current selection (gone when deselected, OSNAP off or cursor away).
+  const activeGuides = dragId
+    ? dragGuides
+    : osnap && !selRect && !isPanning && hoverGuides && hoverGuides.key === selectionKey && store.selectedIds.length > 0
+      ? hoverGuides
+      : null;
+
+  // Live selection preview: objects that the current window/crossing would select.
+  const previewIds = useMemo(
+    () => new Set(selRect ? selectByRect(store.project.components, selRect, selRect.mode) : []),
+    [selRect, store.project.components],
+  );
 
   const selBox = selRect ? {
     x: Math.min(selRect.x0, selRect.x1),
@@ -221,7 +449,7 @@ export default function Canvas({ store, showGrid, viewBox, setViewBox, dimension
   } : null;
 
   return (
-    <div className="relative w-full h-full" style={{ background: '#0c1222' }}>
+    <div className="relative w-full h-full" style={{ background: palette.background, transition: 'background-color 120ms linear' }}>
       <svg
         ref={svgRef}
         className="w-full h-full"
@@ -230,14 +458,16 @@ export default function Canvas({ store, showGrid, viewBox, setViewBox, dimension
         onPointerMove={handlePointerMove}
         onPointerUp={finishPointer}
         onPointerCancel={finishPointer}
+        onPointerLeave={() => { setPointerInside(false); if (!dragId) setHoverGuides(null); }}
+        onPointerEnter={() => setPointerInside(true)}
         style={{ cursor: isPanning ? 'grabbing' : dragId ? 'move' : 'crosshair', touchAction: 'none' }}
       >
         <defs>
           <pattern id="grid" width={gridSize} height={gridSize} patternUnits="userSpaceOnUse">
-            <path d={`M ${gridSize} 0 L 0 0 0 ${gridSize}`} fill="none" stroke="rgba(148,163,184,0.07)" strokeWidth={viewBox.w * 0.001} />
+            <path d={`M ${gridSize} 0 L 0 0 0 ${gridSize}`} fill="none" stroke={palette.gridColor} strokeOpacity={palette.gridMinorOpacity} strokeWidth={viewBox.w * 0.001} />
           </pattern>
           <pattern id="grid-major" width={gridSize * 5} height={gridSize * 5} patternUnits="userSpaceOnUse">
-            <path d={`M ${gridSize * 5} 0 L 0 0 0 ${gridSize * 5}`} fill="none" stroke="rgba(148,163,184,0.12)" strokeWidth={viewBox.w * 0.002} />
+            <path d={`M ${gridSize * 5} 0 L 0 0 0 ${gridSize * 5}`} fill="none" stroke={palette.gridColor} strokeOpacity={palette.gridOpacity} strokeWidth={viewBox.w * 0.002} />
           </pattern>
         </defs>
 
@@ -250,8 +480,8 @@ export default function Canvas({ store, showGrid, viewBox, setViewBox, dimension
         )}
 
         {/* Axes */}
-        <line x1={viewBox.x} y1={0} x2={viewBox.x + viewBox.w} y2={0} stroke="rgba(239,68,68,0.3)" strokeWidth={viewBox.w * 0.001} />
-        <line x1={0} y1={viewBox.y} x2={0} y2={viewBox.y + viewBox.h} stroke="rgba(34,197,94,0.3)" strokeWidth={viewBox.w * 0.001} />
+        <line x1={viewBox.x} y1={0} x2={viewBox.x + viewBox.w} y2={0} stroke={palette.axisX} strokeWidth={viewBox.w * 0.001} />
+        <line x1={0} y1={viewBox.y} x2={0} y2={viewBox.y + viewBox.h} stroke={palette.axisY} strokeWidth={viewBox.w * 0.001} />
 
         {/* Y-axis flipped: in engineering, Y is up. We use SVG transform to flip. */}
         <g transform="scale(1, -1)">
@@ -261,11 +491,34 @@ export default function Canvas({ store, showGrid, viewBox, setViewBox, dimension
               key={comp.id}
               comp={comp}
               selected={store.selectedIds.includes(comp.id)}
+              preview={previewIds.has(comp.id)}
               strokeWidth={viewBox.w * 0.002}
               fontScale={dimensionFontScale}
               onPointerDown={(e) => startDrag(comp.id, e)}
+              palette={palette}
             />
           ))}
+
+          {/* Interior voids of combined sections: click to select (Delete Cutout) */}
+          {store.project.components.filter(c => c.visible && c.geometry.rings && c.geometry.rings.length > 1).map(comp =>
+            combinedVoids(comp).map((ring, index) => {
+              const selected = store.selectedVoid?.combinedId === comp.id && store.selectedVoid.index === index;
+              return (
+                <path
+                  key={`${comp.id}:void:${index}`}
+                  d={ring.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x} ${p.y}`).join(' ') + ' Z'}
+                  fill={selected ? 'rgba(239,68,68,0.25)' : 'rgba(0,0,0,0)'}
+                  stroke={selected ? '#ef4444' : 'none'}
+                  strokeWidth={viewBox.w * 0.002}
+                  strokeDasharray={selected ? `${viewBox.w * 0.008} ${viewBox.w * 0.004}` : undefined}
+                  style={{ cursor: 'pointer' }}
+                  onPointerDown={e => { e.stopPropagation(); store.selectVoid(comp.id, index); }}
+                >
+                  <title>{`Void ${index + 1} of ${comp.name} — click to select, Delete to remove`}</title>
+                </path>
+              );
+            }),
+          )}
 
           {/* Centroid marker */}
           {store.properties && store.properties.area > 0 && (
@@ -277,9 +530,53 @@ export default function Canvas({ store, showGrid, viewBox, setViewBox, dimension
               showPrincipal={Math.abs(store.properties.Ixy) > 0.01}
               axisLen={viewBox.w * 0.12}
               strokeWidth={viewBox.w * 0.002}
+              palette={palette}
             />
           )}
+          {/* CG → extreme-edge dimensions (hover the CG marker) */}
+          {cgDims && (
+            <CgDimensionLayer dims={cgDims} px={pxNow} lineColor={palette.centroid} halo={palette.background} units={store.project.units} />
+          )}
+          {/* Dynamic object-snap guide lines */}
+          {activeGuides && activeGuides.guides.length > 0 && (
+            <GuideLayer guides={activeGuides.guides} px={activeGuides.px} color={palette.guide} halo={palette.background} units={store.project.units} showLabels={osnapLabels} />
+          )}
+          {/* Object snap indicator (AutoCAD-style glyph at the snap point) */}
+          {snap && dragId && (
+            <SnapMarker snap={snap} size={SNAP_APERTURE_PX * 0.8 * snap.px} color={palette.snap} />
+          )}
         </g>
+
+        {/* Snap label + snapped-point coordinates (outside the Y flip so text is upright).
+            Hidden by the OSNAP Dimensions/Labels toggle; snapping itself is unaffected. */}
+        {snap && dragId && osnapLabels && (() => {
+          const px = snap.px;
+          const fmt = (v: number) => (Math.abs(v) < 5e-10 ? '0' : v.toFixed(2));
+          const text = `${SNAP_LABELS[snap.kind]}  (${fmt(snap.target.x)}, ${fmt(snap.target.y)})`;
+          return (
+            <g pointerEvents="none" data-testid="osnap-label">
+              <rect
+                x={snap.target.x + 14 * px}
+                y={-snap.target.y + 10 * px}
+                width={(text.length * 7 + 10) * px}
+                height={18 * px}
+                rx={3 * px}
+                fill="rgba(15,23,42,0.92)"
+                stroke="#facc15"
+                strokeWidth={px}
+              />
+              <text
+                x={snap.target.x + 19 * px}
+                y={-snap.target.y + 23 * px}
+                fill="#facc15"
+                fontSize={12 * px}
+                fontFamily="JetBrains Mono, monospace"
+              >
+                {text}
+              </text>
+            </g>
+          );
+        })()}
 
         {/* Rectangle selection overlay (drawn in svg screen space, outside the flip) */}
         {selBox && selRect && (
@@ -302,20 +599,22 @@ export default function Canvas({ store, showGrid, viewBox, setViewBox, dimension
               textAnchor="middle"
               fontFamily="JetBrains Mono, monospace"
             >
-              {selRect.mode === 'window' ? 'WINDOW' : 'CROSSING'} · {selBox.w.toFixed(1)} × {selBox.h.toFixed(1)}
+              {selRect.mode === 'window' ? 'WINDOW' : 'CROSSING'}{selRect.additive ? ' (+)' : ''} · {selBox.w.toFixed(1)} × {selBox.h.toFixed(1)} · {previewIds.size} object{previewIds.size === 1 ? '' : 's'}
             </text>
           </g>
         )}
       </svg>
 
       {/* Coordinate display */}
-      <div className="absolute bottom-2 left-2 px-2 py-1 rounded text-[10px] font-mono" style={{ background: 'rgba(15,23,42,0.85)', color: 'var(--text-secondary)' }}>
+      <div className="absolute bottom-2 left-2 px-2 py-1 rounded text-[10px] font-mono" style={{ background: palette.overlayBg, color: palette.overlayText }}>
         X: {mouseWorld.x.toFixed(1)} &nbsp; Y: {mouseWorld.y.toFixed(1)} &nbsp; {store.project.units}
+        &nbsp;·&nbsp;<span style={{ color: osnap ? palette.snap : undefined, opacity: osnap ? 1 : 0.5 }}>OSNAP {osnap ? 'ON' : 'OFF'}</span>
+        &nbsp;·&nbsp;<span style={{ color: osnapLabels ? palette.snap : undefined, opacity: osnapLabels ? 1 : 0.5 }}>DIMS {osnapLabels ? 'ON' : 'OFF'}</span>
       </div>
 
       {/* Grid size indicator */}
       {showGrid && (
-        <div className="absolute bottom-2 right-2 px-2 py-1 rounded text-[10px] font-mono" style={{ background: 'rgba(15,23,42,0.85)', color: 'var(--text-muted)' }}>
+        <div className="absolute bottom-2 right-2 px-2 py-1 rounded text-[10px] font-mono" style={{ background: palette.overlayBg, color: palette.overlayText, opacity: 0.85 }}>
           Grid: {gridSize} {store.project.units}
         </div>
       )}
@@ -323,27 +622,37 @@ export default function Canvas({ store, showGrid, viewBox, setViewBox, dimension
   );
 }
 
-function ComponentRenderer({ comp, selected, strokeWidth, fontScale, onPointerDown }: {
+function ComponentRenderer({ comp, selected, preview = false, strokeWidth, fontScale, onPointerDown, palette }: {
   comp: SectionComponent;
   selected: boolean;
+  /** Highlighted as part of the in-progress selection window. */
+  preview?: boolean;
   strokeWidth: number;
   fontScale: number;
   onPointerDown: (e: React.PointerEvent) => void;
+  palette: CanvasPalette;
 }) {
   const props = computeComponentProps(comp);
   const outline = props.outline;
   const isSubtract = comp.operation === 'subtract';
   const isLocked = comp.locked;
 
-  const fillColor = isSubtract ? 'rgba(239,68,68,0.15)' : 'rgba(59,130,246,0.15)';
-  const strokeColor = selected
-    ? '#fbbf24'
-    : isLocked ? '#f59e0b' : isSubtract ? '#ef4444' : '#3b82f6';
+  const fillColor = isSubtract ? palette.subtractFill : palette.addFill;
+  const strokeColor = preview && !selected
+    ? palette.preview
+    : selected
+    ? palette.selected
+    : isLocked ? palette.lockedStroke : isSubtract ? palette.subtractStroke : palette.addStroke;
 
   // For circles and ellipses, render as polygon from outline
   if (outline.length < 2) return null;
 
-  const d = outline.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x} ${p.y}`).join(' ') + ' Z';
+  // Combined sections render their exact rings (outer + voids) so the
+  // zero-width keyhole bridge of the coordinate boundary is not drawn.
+  const rings = componentRenderRings(comp) ?? [outline];
+  const d = rings
+    .map(ring => ring.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x} ${p.y}`).join(' ') + ' Z')
+    .join(' ');
 
   // Compute bounding box for dimension annotations
   const xs = outline.map(p => p.x);
@@ -359,9 +668,10 @@ function ComponentRenderer({ comp, selected, strokeWidth, fontScale, onPointerDo
     <g onPointerDown={onPointerDown} style={{ cursor: 'move' }}>
       <path
         d={d}
-        fill={fillColor}
+        fillRule="evenodd"
+        fill={preview && !selected ? palette.previewFill : fillColor}
         stroke={strokeColor}
-        strokeWidth={strokeWidth}
+        strokeWidth={preview && !selected ? strokeWidth * 1.8 : strokeWidth}
         strokeLinejoin="round"
       />
       {selected && (
@@ -369,22 +679,22 @@ function ComponentRenderer({ comp, selected, strokeWidth, fontScale, onPointerDo
           <path
             d={d}
             fill="none"
-            stroke="#fbbf24"
+            stroke={palette.selected}
             strokeWidth={strokeWidth * 0.5}
             strokeDasharray={`${strokeWidth * 4} ${strokeWidth * 2}`}
           />
           {/* Dimension annotations */}
           {/* Width dimension (bottom) */}
           <line x1={minX} y1={minY - dimOffset} x2={maxX} y2={minY - dimOffset}
-            stroke="#fbbf24" strokeWidth={strokeWidth * 0.3} />
+            stroke={palette.selected} strokeWidth={strokeWidth * 0.3} />
           <line x1={minX} y1={minY - dimOffset * 0.6} x2={minX} y2={minY - dimOffset * 1.4}
-            stroke="#fbbf24" strokeWidth={strokeWidth * 0.3} />
+            stroke={palette.selected} strokeWidth={strokeWidth * 0.3} />
           <line x1={maxX} y1={minY - dimOffset * 0.6} x2={maxX} y2={minY - dimOffset * 1.4}
-            stroke="#fbbf24" strokeWidth={strokeWidth * 0.3} />
+            stroke={palette.selected} strokeWidth={strokeWidth * 0.3} />
           <text
             x={(minX + maxX) / 2}
             y={-(minY - dimOffset * 1.6)}
-            fill="#fbbf24"
+            fill={palette.selected}
             fontSize={fontSize}
             textAnchor="middle"
             fontFamily="JetBrains Mono, monospace"
@@ -395,15 +705,15 @@ function ComponentRenderer({ comp, selected, strokeWidth, fontScale, onPointerDo
           </text>
           {/* Height dimension (right) */}
           <line x1={maxX + dimOffset} y1={minY} x2={maxX + dimOffset} y2={maxY}
-            stroke="#fbbf24" strokeWidth={strokeWidth * 0.3} />
+            stroke={palette.selected} strokeWidth={strokeWidth * 0.3} />
           <line x1={maxX + dimOffset * 0.6} y1={minY} x2={maxX + dimOffset * 1.4} y2={minY}
-            stroke="#fbbf24" strokeWidth={strokeWidth * 0.3} />
+            stroke={palette.selected} strokeWidth={strokeWidth * 0.3} />
           <line x1={maxX + dimOffset * 0.6} y1={maxY} x2={maxX + dimOffset * 1.4} y2={maxY}
-            stroke="#fbbf24" strokeWidth={strokeWidth * 0.3} />
+            stroke={palette.selected} strokeWidth={strokeWidth * 0.3} />
           <text
             x={maxX + dimOffset * 1.6}
             y={-((minY + maxY) / 2)}
-            fill="#fbbf24"
+            fill={palette.selected}
             fontSize={fontSize}
             textAnchor="middle"
             fontFamily="JetBrains Mono, monospace"
@@ -418,7 +728,7 @@ function ComponentRenderer({ comp, selected, strokeWidth, fontScale, onPointerDo
   );
 }
 
-function CentroidMarker({ cx, cy, size, principalAngle, showPrincipal, axisLen, strokeWidth }: {
+function CentroidMarker({ cx, cy, size, principalAngle, showPrincipal, axisLen, strokeWidth, palette }: {
   cx: number;
   cy: number;
   size: number;
@@ -426,6 +736,7 @@ function CentroidMarker({ cx, cy, size, principalAngle, showPrincipal, axisLen, 
   showPrincipal: boolean;
   axisLen: number;
   strokeWidth: number;
+  palette: CanvasPalette;
 }) {
   const rad = (principalAngle * Math.PI) / 180;
   const cos = Math.cos(rad);
@@ -434,9 +745,9 @@ function CentroidMarker({ cx, cy, size, principalAngle, showPrincipal, axisLen, 
   return (
     <g>
       {/* Centroid crosshair */}
-      <circle cx={cx} cy={cy} r={size} fill="none" stroke="#fbbf24" strokeWidth={strokeWidth} />
-      <line x1={cx - size * 1.5} y1={cy} x2={cx + size * 1.5} y2={cy} stroke="#fbbf24" strokeWidth={strokeWidth * 0.7} />
-      <line x1={cx} y1={cy - size * 1.5} x2={cx} y2={cy + size * 1.5} stroke="#fbbf24" strokeWidth={strokeWidth * 0.7} />
+      <circle cx={cx} cy={cy} r={size} fill="none" stroke={palette.centroid} strokeWidth={strokeWidth} />
+      <line x1={cx - size * 1.5} y1={cy} x2={cx + size * 1.5} y2={cy} stroke={palette.centroid} strokeWidth={strokeWidth * 0.7} />
+      <line x1={cx} y1={cy - size * 1.5} x2={cx} y2={cy + size * 1.5} stroke={palette.centroid} strokeWidth={strokeWidth * 0.7} />
 
       {/* Principal axes */}
       {showPrincipal && (
@@ -446,7 +757,7 @@ function CentroidMarker({ cx, cy, size, principalAngle, showPrincipal, axisLen, 
             y1={cy - axisLen * sin}
             x2={cx + axisLen * cos}
             y2={cy + axisLen * sin}
-            stroke="#f59e0b"
+            stroke={palette.principal1}
             strokeWidth={strokeWidth * 0.5}
             strokeDasharray={`${strokeWidth * 3} ${strokeWidth * 1.5}`}
           />
@@ -455,7 +766,7 @@ function CentroidMarker({ cx, cy, size, principalAngle, showPrincipal, axisLen, 
             y1={cy - axisLen * cos}
             x2={cx - axisLen * sin}
             y2={cy + axisLen * cos}
-            stroke="#f97316"
+            stroke={palette.principal2}
             strokeWidth={strokeWidth * 0.5}
             strokeDasharray={`${strokeWidth * 3} ${strokeWidth * 1.5}`}
           />
@@ -466,14 +777,209 @@ function CentroidMarker({ cx, cy, size, principalAngle, showPrincipal, axisLen, 
       <text
         x={cx + size * 2}
         y={-cy + size * 2}
-        fill="#fbbf24"
+        fill={palette.centroid}
         fontSize={size * 1.5}
         transform={`scale(1,-1) translate(0, ${-2 * cy})`}
         fontFamily="Inter, sans-serif"
         fontWeight={600}
       >
-        C.G.
+        C.G. ({Math.abs(cx) < 1e-9 ? '0' : cx.toFixed(2)}, {Math.abs(cy) < 1e-9 ? '0' : cy.toFixed(2)})
       </text>
+    </g>
+  );
+}
+
+/** AutoCAD OSNAP marker glyphs: □ endpoint, △ midpoint, ○ centre, ◇ quadrant, ⊗ node, ⧖ nearest. */
+function SnapMarker({ snap, size, color = '#facc15' }: { snap: SnapResult; size: number; color?: string }) {
+  const { x, y } = snap.target;
+  const h = size * 0.75;
+  const sw = size * 0.16;
+  const common = { fill: 'none', stroke: color, strokeWidth: sw } as const;
+  let glyph: React.ReactNode;
+  switch (snap.kind) {
+    case 'endpoint':
+      glyph = <rect x={x - h} y={y - h} width={2 * h} height={2 * h} {...common} />;
+      break;
+    case 'midpoint':
+      glyph = <polygon points={`${x - h},${y - h * 0.8} ${x + h},${y - h * 0.8} ${x},${y + h}`} {...common} />;
+      break;
+    case 'center':
+      glyph = <circle cx={x} cy={y} r={h} {...common} />;
+      break;
+    case 'quadrant':
+      glyph = <polygon points={`${x},${y + h} ${x + h},${y} ${x},${y - h} ${x - h},${y}`} {...common} />;
+      break;
+    case 'node':
+      glyph = (
+        <>
+          <circle cx={x} cy={y} r={h} {...common} />
+          <path d={`M ${x - h * 0.7} ${y - h * 0.7} L ${x + h * 0.7} ${y + h * 0.7} M ${x - h * 0.7} ${y + h * 0.7} L ${x + h * 0.7} ${y - h * 0.7}`} {...common} />
+        </>
+      );
+      break;
+    default:
+      // Nearest: hourglass
+      glyph = <path d={`M ${x - h} ${y + h} L ${x + h} ${y + h} L ${x - h} ${y - h} L ${x + h} ${y - h} Z`} {...common} />;
+  }
+  return (
+    <g pointerEvents="none">
+      {snap.distance > 1e-9 && (
+        <line
+          x1={snap.source.x} y1={snap.source.y} x2={x} y2={y}
+          stroke={color} strokeWidth={sw * 0.5} strokeDasharray={`${size * 0.3} ${size * 0.2}`} opacity={0.6}
+        />
+      )}
+      {glyph}
+    </g>
+  );
+}
+
+/**
+ * Dashed object-snap guides (drawn inside the Y-flipped group).
+ * Alignment guides extend slightly past both points (tracking-line look);
+ * perpendicular guides get a right-angle tick and the gap distance.
+ */
+function GuideLayer({ guides, px, color, halo, units, showLabels = true }: {
+  guides: Guide[];
+  px: number;
+  color: string;
+  halo: string;
+  units: string;
+  /** OSNAP Dimensions/Labels toggle: lines/markers stay, text is hidden. */
+  showLabels?: boolean;
+}) {
+  const sw = 1.1 * px;
+  const dash = `${6 * px} ${4 * px}`;
+  const tick = 7 * px;
+  const font = 11 * px;
+  const fmt = (d: number) => (Math.abs(d) >= 1000 ? d.toFixed(0) : Math.abs(d) >= 10 ? d.toFixed(1) : d.toFixed(2));
+  return (
+    <g pointerEvents="none" data-testid="snap-guides">
+      {guides.map((g, i) => {
+        const vx = g.to.x - g.from.x;
+        const vy = g.to.y - g.from.y;
+        const len = Math.hypot(vx, vy) || 1;
+        const ux = vx / len, uy = vy / len;
+        const ext = 14 * px;
+        const isAlign = g.kind !== 'perp';
+        const a = isAlign ? { x: g.from.x - ux * ext, y: g.from.y - uy * ext } : g.from;
+        const b = isAlign ? { x: g.to.x + ux * ext, y: g.to.y + uy * ext } : g.to;
+        // Label at the midpoint, offset to the side of the line.
+        const mid = { x: (g.from.x + g.to.x) / 2 - uy * 8 * px, y: (g.from.y + g.to.y) / 2 + ux * 8 * px };
+        // Right-angle tick at the foot (on the face the guide meets).
+        const foot = g.ref === 'edge' ? g.to : g.from;
+        const back = g.ref === 'edge' ? -1 : 1;
+        const nx = -uy, ny = ux;
+        const tickPath = `M ${foot.x + back * ux * tick} ${foot.y + back * uy * tick} `
+          + `L ${foot.x + back * ux * tick + nx * tick} ${foot.y + back * uy * tick + ny * tick} `
+          + `L ${foot.x + nx * tick} ${foot.y + ny * tick}`;
+        const label = isAlign ? `${g.kind === 'align-x' ? '⇕' : '⇔'} ${fmt(g.distance)}` : `⊥ ${fmt(g.distance)} ${units}`;
+        return (
+          <g key={i} data-guide-kind={g.kind}>
+            <line x1={a.x} y1={a.y} x2={b.x} y2={b.y} stroke={color} strokeWidth={sw} strokeDasharray={dash} />
+            {g.kind === 'perp' && <path d={tickPath} fill="none" stroke={color} strokeWidth={sw * 0.9} />}
+            {/* Reference marker (×) and source marker (○) */}
+            <path
+              d={`M ${g.to.x - 4 * px} ${g.to.y - 4 * px} L ${g.to.x + 4 * px} ${g.to.y + 4 * px} M ${g.to.x - 4 * px} ${g.to.y + 4 * px} L ${g.to.x + 4 * px} ${g.to.y - 4 * px}`}
+              stroke={color} strokeWidth={sw * 1.3}
+            />
+            <circle cx={g.from.x} cy={g.from.y} r={3 * px} fill="none" stroke={color} strokeWidth={sw * 1.2} />
+            {showLabels && <text
+              data-osnap-dim
+              x={mid.x}
+              y={-mid.y}
+              transform="scale(1,-1)"
+              fontSize={font}
+              fill={color}
+              stroke={halo}
+              strokeWidth={3 * px}
+              paintOrder="stroke"
+              textAnchor="middle"
+              dominantBaseline="middle"
+              fontFamily="JetBrains Mono, monospace"
+              fontWeight={600}
+            >
+              {label}
+            </text>}
+          </g>
+        );
+      })}
+    </g>
+  );
+}
+
+/**
+ * Horizontal + vertical dimensions from the CG to the extreme left/right/top/
+ * bottom edges of the section (drawn inside the Y-flipped group). All sizes
+ * are in screen pixels × `px`, so they stay constant under zoom/pan.
+ */
+function CgDimensionLayer({ dims, px, lineColor, halo, units }: {
+  dims: CgDimensions;
+  px: number;
+  lineColor: string;
+  halo: string;
+  units: string;
+}) {
+  const { cg, left, right, top, bottom } = dims;
+  const sw = 1 * px;
+  const arrowL = 8 * px;
+  const arrowW = 3 * px;
+  const font = 11 * px;
+  const fmt = (d: number) => (Math.abs(d) >= 1000 ? d.toFixed(1) : d.toFixed(2));
+  const arrow = (tip: Point, dx: number, dy: number, key: string) => {
+    // Arrowhead pointing along (dx, dy) with its tip at `tip`.
+    const bx = tip.x - dx * arrowL, by = tip.y - dy * arrowL;
+    return (
+      <path key={key} d={`M ${tip.x} ${tip.y} L ${bx - dy * arrowW} ${by + dx * arrowW} L ${bx + dy * arrowW} ${by - dx * arrowW} Z`} fill={lineColor} />
+    );
+  };
+  const text = (x: number, y: number, label: string, anchor: 'middle' | 'start' | 'end', key: string, baseline: 'auto' | 'middle' | 'hanging' = 'auto') => (
+    <text
+      key={key}
+      data-cg-dim
+      x={x}
+      y={-y}
+      transform="scale(1,-1)"
+      fontSize={font}
+      fill={lineColor}
+      stroke={halo}
+      strokeWidth={3 * px}
+      paintOrder="stroke"
+      textAnchor={anchor}
+      dominantBaseline={baseline}
+      fontFamily="JetBrains Mono, monospace"
+      fontWeight={600}
+    >
+      {label}
+    </text>
+  );
+  const ext = (from: Point, to: Point, key: string) =>
+    Math.hypot(to.x - from.x, to.y - from.y) > 0.5 * px
+      ? <line key={key} x1={from.x} y1={from.y} x2={to.x} y2={to.y} stroke={lineColor} strokeWidth={sw * 0.8} strokeDasharray={`${3 * px} ${3 * px}`} />
+      : null;
+  const minLen = 2 * arrowL;
+  return (
+    <g pointerEvents="none" data-testid="cg-dimensions">
+      {/* Extension lines from the extreme edges to the dimension lines through the CG */}
+      {ext(left.point, { x: left.coord, y: cg.y }, 'el')}
+      {ext(right.point, { x: right.coord, y: cg.y }, 'er')}
+      {ext(top.point, { x: cg.x, y: top.coord }, 'et')}
+      {ext(bottom.point, { x: cg.x, y: bottom.coord }, 'eb')}
+      {/* Horizontal dimension line */}
+      <line x1={left.coord} y1={cg.y} x2={right.coord} y2={cg.y} stroke={lineColor} strokeWidth={sw} />
+      {/* Vertical dimension line */}
+      <line x1={cg.x} y1={bottom.coord} x2={cg.x} y2={top.coord} stroke={lineColor} strokeWidth={sw} />
+      {left.distance > minLen && [arrow({ x: left.coord, y: cg.y }, -1, 0, 'al1'), arrow(cg, 1, 0, 'al2')]}
+      {right.distance > minLen && [arrow({ x: right.coord, y: cg.y }, 1, 0, 'ar1'), arrow(cg, -1, 0, 'ar2')]}
+      {top.distance > minLen && [arrow({ x: cg.x, y: top.coord }, 0, 1, 'at1'), arrow(cg, 0, -1, 'at2')]}
+      {bottom.distance > minLen && [arrow({ x: cg.x, y: bottom.coord }, 0, -1, 'ab1'), arrow(cg, 0, 1, 'ab2')]}
+      {/* Values: above the horizontal line, beside the vertical line */}
+      {text((left.coord + cg.x) / 2, cg.y + 4 * px, `${fmt(left.distance)}`, 'middle', 'tl')}
+      {text((right.coord + cg.x) / 2, cg.y + 4 * px, `${fmt(right.distance)}`, 'middle', 'tr')}
+      {text(cg.x + 5 * px, (top.coord + cg.y) / 2, `${fmt(top.distance)}`, 'start', 'tt', 'middle')}
+      {text(cg.x + 5 * px, (bottom.coord + cg.y) / 2, `${fmt(bottom.distance)}`, 'start', 'tb', 'middle')}
+      {/* Units hint next to the CG */}
+      {text(cg.x - 5 * px, cg.y - 6 * px, units, 'end', 'tu', 'hanging')}
     </g>
   );
 }

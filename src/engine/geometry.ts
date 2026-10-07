@@ -686,6 +686,34 @@ export function computeComponentProps(comp: SectionComponent): PrimitiveProps {
 
 // ─── Composite section properties ─────────────────────────────────────────
 
+/**
+ * Translate a complete section so its current composite centre of gravity is
+ * the engineering origin. This is a change of reference frame only: component
+ * dimensions, rotations, and relative spacing remain unchanged.
+ */
+export function centerComponentsAtCG(components: SectionComponent[]): SectionComponent[] {
+  if (components.length === 0) return components;
+  const { props } = computeSectionProperties(components);
+  const dx = props.centroidX;
+  const dy = props.centroidY;
+  if (!Number.isFinite(dx) || !Number.isFinite(dy) || props.area === 0) return components;
+
+  const sectionSize = Math.max(
+    Math.abs(props.xMin), Math.abs(props.xMax),
+    Math.abs(props.yMin), Math.abs(props.yMax),
+    1,
+  );
+  if (Math.abs(dx) <= sectionSize * 1e-12 && Math.abs(dy) <= sectionSize * 1e-12) return components;
+
+  return components.map(component => ({
+    ...component,
+    position: {
+      x: component.position.x - dx,
+      y: component.position.y - dy,
+    },
+  }));
+}
+
 export function computeSectionProperties(components: SectionComponent[]): {
   props: import('./types').SectionProperties;
   componentProps: Map<string, PrimitiveProps>;
@@ -735,8 +763,20 @@ export function computeSectionProperties(components: SectionComponent[]): {
     return { props: emptyProps, componentProps: compProps, trace: { title: 'Section Properties', steps: [], children: [] } };
   }
 
-  const cx = sumAx / totalArea;
-  const cy = sumAy / totalArea;
+  let cx = sumAx / totalArea;
+  let cy = sumAy / totalArea;
+  // Eliminate floating-point residue after the section has been translated to
+  // its CG-relative frame, so the reference origin is reported exactly (0,0).
+  let coordinateScale = 1;
+  for (const component of compProps.values()) {
+    coordinateScale = Math.max(coordinateScale, Math.abs(component.cx), Math.abs(component.cy));
+    for (const point of component.outline) {
+      coordinateScale = Math.max(coordinateScale, Math.abs(point.x), Math.abs(point.y));
+    }
+  }
+  const originTolerance = coordinateScale * 1e-12;
+  if (Math.abs(cx) <= originTolerance) cx = 0;
+  if (Math.abs(cy) <= originTolerance) cy = 0;
 
   traceSteps.push(
     { label: 'Total Area', formula: 'A = ΣAi', substitution: '', result: fmt(totalArea), unit: 'mm²' },

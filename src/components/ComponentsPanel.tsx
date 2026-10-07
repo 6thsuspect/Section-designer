@@ -26,6 +26,23 @@ interface Props {
 
 export default function ComponentsPanel({ store, onOpenCustomShape, onEditCoordinates }: Props) {
   const [showAdd, setShowAdd] = useState(false);
+  const [combineError, setCombineError] = useState<string | null>(null);
+  const selectedCombined = store.project.components.find(c =>
+    store.selectedIds.length === 1 && c.id === store.selectedIds[0] && c.combinedFrom?.length);
+  const canCombine = store.selectedIds.length >= 2;
+
+  // Ctrl/⌘/Shift-click toggles a row in the multi-selection (for Combine).
+  const handleRowSelect = (id: string, event: React.MouseEvent) => {
+    setCombineError(null);
+    if (event.ctrlKey || event.metaKey || event.shiftKey) {
+      const ids = store.selectedIds.includes(id)
+        ? store.selectedIds.filter(x => x !== id)
+        : [...store.selectedIds, id];
+      store.selectComponents(ids);
+    } else {
+      store.selectComponent(id);
+    }
+  };
 
   return (
     <div className="flex flex-col h-full">
@@ -70,6 +87,35 @@ export default function ComponentsPanel({ store, onOpenCustomShape, onEditCoordi
         </div>
       )}
 
+      {/* Combine / Uncombine */}
+      {(canCombine || selectedCombined) && (
+        <div className="p-2 border-b space-y-1" style={{ borderColor: 'var(--border)' }}>
+          {canCombine && (
+            <button
+              className="btn btn-primary w-full text-xs"
+              onClick={() => setCombineError(store.combineShapes(store.selectedIds))}
+              title="Merge the selected connected/overlapping shapes into one closed-coordinate section; overlapping subtract/cut-out portions are removed from the material"
+            >
+              ⊕ Combine {store.selectedIds.length} Shapes
+            </button>
+          )}
+          {selectedCombined && (
+            <button
+              className="btn btn-ghost w-full text-xs"
+              style={{ border: '1px solid var(--border)' }}
+              onClick={() => setCombineError(store.uncombineShape(selectedCombined.id))}
+              title="Restore the original shapes exactly as they were before combining"
+            >
+              ⊟ Uncombine
+            </button>
+          )}
+          {combineError && <div className="text-[10px]" style={{ color: 'var(--danger)' }}>{combineError}</div>}
+          {!combineError && selectedCombined && store.overlapNotice && (
+            <div className="text-[10px]" style={{ color: 'var(--success)' }}>{store.overlapNotice}</div>
+          )}
+        </div>
+      )}
+
       {/* Component Tree */}
       <div className="flex-1 overflow-y-auto">
         {store.project.components.length === 0 ? (
@@ -79,18 +125,31 @@ export default function ComponentsPanel({ store, onOpenCustomShape, onEditCoordi
             <div className="text-xs mt-1">Click + to add a section component.</div>
           </div>
         ) : (
-          store.project.components.map(comp => (
+          store.project.components
+            // Grouped deductions are collapsed into their parent plate row.
+            // Combined-section cut-outs are collapsed into the combined row.
+            .filter(comp => !comp.managedByParent)
+            .map(comp => (
             <ComponentTreeItem
               key={comp.id}
               comp={comp}
               selected={store.selectedIds.includes(comp.id)}
-              onSelect={() => store.selectComponent(comp.id)}
+              onSelect={event => handleRowSelect(comp.id, event)}
               onDelete={() => store.deleteComponent(comp.id)}
               onDuplicate={() => store.duplicateComponent(comp.id)}
               onToggleVisible={() => store.updateComponent(comp.id, { visible: !comp.visible })}
               onToggleLocked={() => store.updateComponent(comp.id, { locked: !comp.locked })}
               onToggleOperation={() => store.updateComponent(comp.id, { operation: comp.operation === 'add' ? 'subtract' : 'add' })}
               onEditCoordinates={onEditCoordinates ? () => onEditCoordinates(comp) : undefined}
+              deductionCount={store.project.components.filter(child => child.parentId === comp.id && child.associationKind === 'bolt-deduction').length}
+              onToggleGroup={comp.type === 'rectangle' && comp.geometry.boltDeductions
+                ? () => store.updateComponent(comp.id, {
+                    geometry: {
+                      ...comp.geometry,
+                      boltDeductions: { ...comp.geometry.boltDeductions!, enabled: true, grouped: !comp.geometry.boltDeductions!.grouped },
+                    },
+                  })
+                : undefined}
             />
           ))
         )}
@@ -99,23 +158,28 @@ export default function ComponentsPanel({ store, onOpenCustomShape, onEditCoordi
   );
 }
 
-function ComponentTreeItem({ comp, selected, onSelect, onDelete, onDuplicate, onToggleVisible, onToggleLocked, onToggleOperation, onEditCoordinates }: {
+function ComponentTreeItem({ comp, selected, onSelect, onDelete, onDuplicate, onToggleVisible, onToggleLocked, onToggleOperation, onEditCoordinates, deductionCount, onToggleGroup }: {
   comp: SectionComponent;
   selected: boolean;
-  onSelect: () => void;
+  onSelect: (event: React.MouseEvent) => void;
   onDelete: () => void;
   onDuplicate: () => void;
   onToggleVisible: () => void;
   onToggleLocked: () => void;
   onToggleOperation: () => void;
   onEditCoordinates?: () => void;
+  deductionCount: number;
+  onToggleGroup?: () => void;
 }) {
+  const isDeduction = comp.associationKind === 'bolt-deduction';
+  const grouped = comp.geometry.boltDeductions?.grouped ?? true;
   return (
     <div
       className="flex items-center gap-1 px-2 py-1.5 cursor-pointer border-l-2 transition-colors"
       style={{
         borderColor: selected ? 'var(--accent)' : 'transparent',
         background: selected ? 'rgba(59,130,246,0.1)' : 'transparent',
+        paddingLeft: isDeduction ? 20 : 8,
       }}
       onClick={onSelect}
     >
@@ -138,8 +202,27 @@ function ComponentTreeItem({ comp, selected, onSelect, onDelete, onDuplicate, on
           fontStyle: comp.locked ? 'italic' : 'normal',
         }}
       >
+        {isDeduction && <span style={{ color: 'var(--text-muted)' }}>└ </span>}
         {comp.locked && '🔒 '}{comp.name}
+        {comp.combinedFrom && comp.combinedFrom.length > 0 && (
+          <span className="ml-1 text-[9px] px-1 rounded" style={{ color: 'var(--success)', background: 'rgba(34,197,94,0.12)' }} title={`Combined from ${comp.combinedFrom.length} shapes — select and Uncombine to restore`}>
+            ⊕{comp.combinedFrom.length}
+          </span>
+        )}
       </span>
+
+      {onToggleGroup && deductionCount > 0 && (
+        <button
+          className="text-[9px] px-1 rounded shrink-0"
+          style={{ color: 'var(--accent)', background: 'rgba(59,130,246,0.12)' }}
+          onClick={e => { e.stopPropagation(); onToggleGroup(); }}
+          title={grouped
+            ? `${deductionCount} grouped bolt-hole deduction(s) — click to ungroup into separate shapes`
+            : `${deductionCount} ungrouped deduction shape(s) — click to regroup with plate`}
+        >
+          {grouped ? `⊞ ${deductionCount}` : `⧉ ${deductionCount}`}
+        </button>
+      )}
 
       {onEditCoordinates && (comp.type === 'custom-shape' || comp.type === 'polygon') && (
         <button

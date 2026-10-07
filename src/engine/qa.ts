@@ -1,4 +1,5 @@
 import type { SectionComponent, QAMessage, Point } from './types';
+import { deductionPatternIssues } from './boltDeductions';
 import { segmentsIntersect } from './geometry';
 
 // Detect self-intersection of a polygon outline (ignores adjacent edges,
@@ -53,7 +54,8 @@ export function validateComponents(components: SectionComponent[]): QAMessage[] 
     if (comp.type === 'polygon' || comp.type === 'custom-shape') {
       if ((g.points ?? []).length < 3) {
         messages.push({ level: 'error', category: 'geometry', message: `${comp.name}: Custom/polygon shape needs at least 3 points.`, componentId: comp.id });
-      } else if (polygonIsSelfIntersecting(g.points ?? [])) {
+      } else if (!g.rings && polygonIsSelfIntersecting(g.points ?? [])) {
+        // Combined sections (g.rings) use zero-width keyhole bridges by design.
         messages.push({
           level: 'warning',
           category: 'engineering',
@@ -65,6 +67,19 @@ export function validateComponents(components: SectionComponent[]): QAMessage[] 
 
     // Engineering warnings
     if (comp.type === 'rectangle') {
+      const deductions = g.boltDeductions;
+      if (deductions?.enabled && deductions.grouped && comp.associationKind !== 'bolt-deduction') {
+        if (deductions.diameter <= 0) {
+          messages.push({ level: 'error', category: 'geometry', message: `${comp.name}: Bolt-hole deduction diameter must be positive.`, componentId: comp.id });
+        } else {
+          for (const issue of deductionPatternIssues(comp)) {
+            messages.push({ level: 'error', category: 'geometry', message: `${comp.name}: Bolt-hole deduction — ${issue.message}`, componentId: comp.id });
+          }
+        }
+        if (comp.operation !== 'add') {
+          messages.push({ level: 'warning', category: 'engineering', message: `${comp.name}: Bolt-hole deductions are inactive while the parent plate operation is Subtract.`, componentId: comp.id });
+        }
+      }
       const ratio = (g.width ?? 1) / (g.height ?? 1);
       if (ratio > 100 || ratio < 0.01) {
         messages.push({ level: 'warning', category: 'engineering', message: `${comp.name}: Aspect ratio is extreme (${ratio.toFixed(1)}).`, componentId: comp.id });

@@ -68,6 +68,184 @@ Custom shapes are represented as a dedicated `custom-shape` component
 type while using the polygon geometry engine for the mathematical
 calculations.
 
+### Canvas navigation and CG reference
+
+-   Mouse-wheel zoom follows the AutoCAD convention: wheel up zooms in and
+    wheel down zooms out, anchored at the mouse cursor.
+-   Zooming and panning only change the viewport; model dimensions and
+    engineering coordinates are not scaled or modified.
+-   With **CG → 0** enabled, all components are translated together so the
+    composite centre of gravity sits at the global origin, without changing
+    dimensions, rotations, or relative spacing.
+-   Section properties are always computed about the centroidal axes,
+    regardless of whether the toggle is enabled.
+
+### CG dimensions (hover)
+
+Hover the **C.G.** marker to show its dimensions to the extreme edges of the section:
+
+- A horizontal dimension line through the CG to the extreme **left** and **right** edges, and a vertical one to the extreme **top** and **bottom** edges, with arrowheads and the four distances (e.g. `100.00 | 100.00 | 50.00 | 130.00`, units shown beside the CG). Left + right = overall width, top + bottom = overall height.
+- Dashed extension lines run from the actual extreme edge to the dimension line: from the point level with the CG when a straight extreme edge spans it, otherwise from the extreme corner nearest to the CG's line (never across a gap between separate plates).
+- Extremes come from the visible material only (subtracted shapes, voids and hidden shapes are ignored; combined sections use their true outer rings).
+- Lines and text use the theme's CG colour (text with a background-coloured halo for legibility). Sizes are in screen pixels, so the dimensions stay crisp and anchored to the CG while zooming and panning, and they update live as the section geometry changes.
+- They disappear when the cursor leaves the CG (12 px aperture) or the canvas, and while dragging, panning or window-selecting.
+
+## Object snap guide lines (tracking)
+
+With **OSNAP on (F3)**, dashed guide lines help align objects, AutoCAD object-snap-tracking style:
+
+- **While dragging** a shape (or a multi-selection):
+  - **Alignment guides** (⇕ vertical / ⇔ horizontal): when any point of the moving object — corner, edge midpoint, centre, quadrant — comes within 8 px of the X or Y of a point on another object, the object is pulled onto that exact alignment and a dashed tracking line is drawn between the two points (○ source, × reference) with the distance along it.
+  - **Perpendicular guides** (⊥): the shortest perpendicular from the moving object to the nearest face/edge of up to three neighbouring objects within ~220 px (or from a neighbour's corner to the moving face), with a right-angle tick and the gap distance in project units.
+  - A precise OSNAP point snap (endpoint, midpoint, …) still takes priority; guides are then drawn for the snapped position. Hold **Alt** for a free move with no snapping or guides.
+- **When a shape is selected**, move the cursor near it: guides are drawn from the selected object's point under the cursor (a corner/midpoint within 14 px, otherwise the nearest point on its edge) to aligned points and to the nearest perpendicular faces of other objects, updating as the cursor moves.
+- **OSNAP Dims** toolbar button (**Shift+F3**) toggles the OSNAP dimensions/labels — the snap-point name with its coordinates (e.g. `Endpoint (50.00, 10.00)`), alignment-guide distances and perpendicular face/edge gaps — The snap label appears as a dark tooltip with yellow text; guide distances use the theme's guide colour with a background-coloured halo. Turning it off hides only the text: snapping, snap glyphs and dashed guide lines keep working. It is independent of **OSNAP (F3)** and both settings are remembered between sessions; the status bar shows `OSNAP ON/OFF · DIMS ON/OFF`.
+- Guides disappear when the cursor moves away from the selected object, when no reference is in range, on deselection, when OSNAP is off, and when the drag ends.
+- Combined sections use their true outer/void rings (no phantom guides from keyhole bridges). Guide colours follow the canvas theme.
+
+## Dockable panels
+
+The **Components** and **Properties** panels are dockable, CAD-style:
+
+- **Drag the tab header** (⠿ title bar) of a panel. Once the pointer moves a few pixels, translucent **docking zones** appear along the **Top, Bottom, Left and Right** edges of the canvas.
+- Hovering a zone **highlights** it and shows a preview of where the panel will land. Release to **dock**; the panel resizes to fill that side (full height for left/right, full canvas width for top/bottom).
+- Release anywhere else to **float** the panel at that position. Floating panels can be moved by their header, resized from the bottom-right corner, and come to the front when clicked; they are kept on-screen when the window resizes.
+- Several panels on the same side stack (vertically on left/right, side-by-side on top/bottom). Drag the edge between a dock and the canvas to resize that side.
+- **Double-click** the header (or use the ⧉ button) to toggle floating ↔ last docked side; ✕ hides the panel (the canvas corner buttons show/hide them again). **Esc** cancels a drag.
+- Panel contents are mounted once and re-parented, so docking/undocking keeps everything intact — active tab, open forms, scroll position and all functionality.
+- The layout (dock sides, sizes, floating positions, visibility) is saved in the browser and restored next session.
+
+## Canvas Theme (Settings → Canvas Theme)
+
+| Theme | Look |
+|---|---|
+| **Grasshopper Style** | Warm grey `#d4d0c8` canvas, faint black grid, red geometry, green selection |
+| **Dark** (default) | Navy `#0c1222` canvas, slate grid, blue/red geometry, amber selection |
+| **Bright / Light** | Near-white `#f8fafc` canvas, darker grid and stronger strokes for contrast |
+| **Custom** | Your own **Canvas Background Color**, **Grid Line Color** and **Grid Line Opacity** |
+
+- Colour pickers (or hex entry: `#rgb` / `#rrggbb`) and the opacity slider (0–100 %, minor grid lines drawn at 55 % of it) apply instantly. Editing a colour while a preset is active switches to Custom, starting from that preset.
+- With Custom, object, selection, overlay and snap colours automatically switch to a light- or dark-background set based on the chosen background's luminance, so geometry stays legible.
+- Themes are display-only: geometry, section properties and exports are unaffected.
+- The theme and custom colours are saved in the browser (`localStorage`) and restored next session; invalid saved values fall back to defaults. (This also fixes an issue where saved settings were overwritten by defaults on page load.)
+
+## Canvas selection (AutoCAD-style)
+
+| Action | Result |
+|---|---|
+| Drag **left → right** on empty canvas | **Window** (blue, solid): selects only objects lying *completely* inside |
+| Drag **right → left** | **Crossing** (green, dashed): selects objects inside *or* touching/intersecting the box |
+| Click an object | Selects it (5 px pick-box makes thin plates and nodes easy to hit; locked objects can be selected but not moved) |
+| Click empty canvas | Clears the selection |
+| Ctrl/⌘ + click or drag | Adds to / toggles the selection |
+| Esc | Cancels an in-progress selection window |
+
+While dragging, the window displays live with its mode, size and the number of objects it will select, and those objects are highlighted in cyan. Combined sections are tested against their true outer/void rings (a window inside a void selects nothing). Locked, hidden and parent-managed (bolt deduction) objects are skipped by window/crossing selection. Dragging any selected object moves the whole selection with one snapped delta. Pan (middle button or Shift+drag), wheel zoom, OSNAP and Alt free-drag are unchanged.
+
+## Edit Coordinates dialog
+
+-   Select coordinate points via the **#** column or by clicking preview
+    nodes: click for one, **Ctrl/⌘-click** to add/remove, **Shift-click** for
+    a range, **Ctrl+A** or the header checkbox for all.
+-   **Ctrl+C** (or **⧉ Copy**) copies the selected points to the clipboard as
+    plain text, one point per line — `x, y` or tab-separated for spreadsheets
+    — ready to paste into any other application.
+-   Preview: **mouse-wheel zoom** anchored at the cursor, **drag to pan**,
+    **⤢ Fit** to fit the complete section (stays fitted while editing until
+    you zoom or pan), and **🏷 Labels** on/off for point numbers (selected
+    points always show their coordinates). These only change the preview;
+    the section geometry is never modified.
+
+### Combine Shapes / Uncombine
+
+-   Select two or more shapes (Ctrl/⌘-click on the canvas, Ctrl/⌘/Shift-click
+    in the component tree, or a window selection) and click **⊕ Combine**.
+-   Additive shapes are boolean-unioned into one `custom-shape` whose
+    coordinates form a **single continuous closed boundary**. Overlaps are
+    counted once. Internal voids (e.g. a box made of four plates) are joined to
+    the outer boundary by a zero-width keyhole bridge, so the boundary stays a
+    single loop and area/inertia equal outer − void exactly. The bridge is not
+    drawn on the canvas.
+-   **Remove Overlapping Portion**: subtractive members — cut-outs and the
+    bolt-hole deductions of selected plates — are removed from the parent
+    plate material by boolean difference. Only the overlapping area is
+    removed (cut-out area outside the material is ignored and reported), so
+    the boundary contains only the actual remaining material and area, CG and
+    all section properties are recalculated from it. Cut-outs fully inside the
+    material become voids; cut-outs that split a plate (e.g. full-thickness
+    bolt deductions) leave several pieces, which are still joined into one
+    closed coordinate loop by zero-width bridges.
+-   Combined sections created by earlier versions that still carry separate
+    cut-outs show a **✂ Remove Overlapping Portion** button in the Properties
+    panel that applies the same operation.
+-   Shapes must be connected (overlapping or sharing an edge — OSNAP helps)
+    and share one material; otherwise Combine explains why it cannot proceed.
+    Circles/ellipses are represented by 256-segment boundaries when combined.
+-   **⊟ Uncombine** (component tree or Properties panel) restores the last
+    uncombined state exactly: every original shape with its id, position,
+    rotation, dimensions, material, bolt-hole deductions and other settings.
+    Combined sections can be combined again; Uncombine reverts one level.
+-   **Delete Cutout**: click an interior void of a combined section on the
+    canvas (it highlights in red) and press **Delete**, or use 🗑 in the
+    *Cut-outs & Voids* list of the Properties panel. The void is filled, the
+    single closed boundary is rebuilt from the remaining rings, and section
+    properties are recalculated; the outer boundary, other voids, position and
+    rotation are unchanged. Subtractive cut-outs (e.g. bolt-hole deductions)
+    from earlier versions can be selected and deleted the same way. Uncombine
+    still restores the original shapes.
+
+### Object Snap (OSNAP)
+
+-   Toggle with the **OSNAP** toolbar button or **F3** (as in AutoCAD). The
+    setting is remembered and shown in the canvas status bar.
+-   While dragging a component with OSNAP on, its endpoints, midpoints, centre
+    and quadrants snap to the nearest **endpoint**, **midpoint**, **centre**,
+    **quadrant**, **edge** (nearest point / face contact) or **node** (global
+    origin) of other visible components, within a 12 px aperture.
+-   An AutoCAD-style marker (□ endpoint, △ midpoint, ○ centre, ◇ quadrant,
+    ⊗ node, ⧖ nearest) and a label appear at the snap point.
+-   Hold **Alt** while dragging to move freely for that drag; with OSNAP
+    off, objects always move freely.
+
+### Rectangular bolt-hole deductions
+
+Bolt holes are modelled as net-section rectangular reductions (not circular
+cut-outs) on an individual rectangular plate:
+
+-   **Deduction depth = bolt-hole diameter**, **deduction width = parent plate
+    thickness** (the smaller plate dimension).
+-   Set the **number** of holes and the full sequence along the plate length:
+    `Edge-1 → H1 → H2 → H3 → … → Edge-2`
+    -   **Edge-1**: start face (local bottom for vertical plates, left for
+        horizontal plates) to the centre of H1.
+    -   **H(n) → H(n+1)**: individual spacing between consecutive holes.
+    -   **Edge-2**: centre of the last hole to the end face.
+-   Edge-1 + ΣH + Edge-2 always equals the plate length. Choose which edge is
+    **held** when the plate length changes; the other is recalculated
+    automatically. Edge-2 can also be typed directly.
+-   Choose how edits behave: **Shift following holes** (holes after the edited
+    one keep their spacings and move with it) or **Move this hole only** (the
+    next gap absorbs the change, so every other hole stays where it is).
+-   Adding a hole appends it at the last spacing; removing one keeps the
+    spacings of the remaining holes. Older projects saved with equal spacing
+    keep their hole positions.
+-   Each deduction is an associated `subtract` rectangle, so area, inertia,
+    moduli, stresses, reports, and exports reflect the net section.
+-   **Grouped** (default): deductions are collapsed beneath the parent plate
+    and follow its size, position, and rotation automatically.
+-   **Ungroup** (Properties panel or the `⊞ n` badge in the component tree):
+    deductions become separate, freely editable shapes still linked to the
+    plate. **Group** again to snap them back to the parametric pattern.
+-   Validation reports overlapping holes (spacing < diameter), Edge-1/Edge-2
+    smaller than the hole radius, and patterns that exceed the plate length
+    (with the overrun amount).
+
+### CG origin toggle
+
+The **CG → 0** toolbar toggle moves the composite centroid to the global
+origin `(0,0)` and keeps it aligned while geometry is edited. Turn it off to
+work in absolute coordinates; the C.G. marker shows the live centroid.
+
 ### Section properties
 
 The application calculates:
@@ -145,7 +323,7 @@ Supported project and engineering exports include:
   -------- -------------------------------
   JSON     Editable project/section file
   DXF      CAD geometry
-  PDF      Engineering report
+  PDF      Section sheet / report
   Excel    Calculation workbook
   CSV      Tabular section data
 
@@ -154,18 +332,46 @@ evolved safely.
 
 ### PDF reports
 
-PDF export is intended to include:
+**Export PDF** produces a single-page A4 *section sheet* in a minimalist
+technical-document style:
 
--   Project information
--   Section drawing
--   Component information
--   Section properties
--   Calculation information
--   Engineering results
+-   Section name top-left, date bottom-right; no logo, header, footer,
+    page numbers or colour.
+-   A thin-bordered figure frame with the section drawn to scale (light grey
+    fill, cut-outs white), the centroid marked **CG**, the principal axes
+    *u*/*v* (only when they differ from Y/Z, clipped to the section) and the
+    overall width / height dimensions.
+-   A separate thin-bordered properties box: geometry, second moments, radii
+    of gyration, elastic and plastic moduli and extreme-fibre distances in two
+    columns, with italic symbols, right-aligned values and proper
+    × 10ⁿ / mm⁴ typesetting.
+-   Automatic layout: the property box takes the height its rows need, the
+    figure frame fills the rest and the section is scaled and centred to fit,
+    so wide, tall and square sections all stay on one balanced page.
 
-The PDF exporter uses `jsPDF` and `jspdf-autotable`.
+**Detailed PDF Report** (same menu) keeps the previous multi-page report with
+project information, component table, calculation trace and results.
 
-### DXF export
+The layout and formatting logic is in `src/engine/pdfSheet.ts` (tested in
+`npm run test:engineering`, Test 22); drawing is in
+`src/engine/pdfSheetRender.ts`. Both reports use `jsPDF` (the detailed
+report also uses `jspdf-autotable`).
+
+### DXF import and export
+
+ASCII DXF drawings can be imported directly for section-property
+calculations. The importer supports:
+
+-   Closed `LWPOLYLINE` and R12 `POLYLINE` boundaries
+-   `CIRCLE` and full `ELLIPSE` entities
+-   Closed loops assembled from individual `LINE` and `ARC` entities
+-   Polyline bulge arcs, discretized at a maximum 10° increment
+-   Drawing units from `$INSUNITS`, with a manual unit override
+-   Automatic openings from nested contours or layers named `CUTOUT`,
+    `HOLE`, `VOID`, or `OPENING`
+
+Open geometry and unsupported annotation entities are skipped and reported
+before import. Binary DXF files must first be saved as ASCII DXF.
 
 DXF export produces CAD-compatible geometry using layers such as:
 

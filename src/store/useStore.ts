@@ -1,8 +1,10 @@
 'use client';
 import { useState, useCallback, useRef } from 'react';
 import { v4 as uuid } from 'uuid';
-import type { SectionComponent, SectionProject, SectionProperties, StressInput, CalcTrace, Material, LengthUnit, QAMessage } from '@/engine/types';
-import { computeSectionProperties, computeStress } from '@/engine/geometry';
+import type { SectionComponent, SectionProject, SectionProperties, StressInput, CalcTrace, Material, LengthUnit, QAMessage, Point } from '@/engine/types';
+import { centerComponentsAtCG, computeSectionProperties, computeStress } from '@/engine/geometry';
+import { synchronizeBoltDeductions } from '@/engine/boltDeductions';
+import { combineComponents, deleteCombinedCutout, deleteCombinedVoid, removeOverlappingPortion, synchronizeCombinedCutouts, uncombineComponent, type OverlapRemovalReport } from '@/engine/combine';
 import { validateComponents } from '@/engine/qa';
 
 const defaultMaterial: Material = {
@@ -35,13 +37,42 @@ function createDefaultProject(): SectionProject {
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
     revision: 1,
+    alignCGToOrigin: false,
   };
+}
+
+function describeOverlapReport(report: OverlapRemovalReport, units: string): string | null {
+  const parts: string[] = [];
+  if (report.removedArea > 0) {
+    parts.push(`Removed ${report.removedArea.toFixed(2)} ${units}² of overlapping cut-out material.`);
+  }
+  if (report.nonOverlapping.length > 0) {
+    parts.push(`No overlap (ignored): ${report.nonOverlapping.join(', ')}.`);
+  }
+  if (report.pieces > 1) {
+    parts.push(`The remaining material consists of ${report.pieces} separate pieces, joined into one closed coordinate loop by zero-width bridges.`);
+  }
+  return parts.length > 0 ? parts.join(' ') : null;
+}
+
+/** Synchronize associated geometry and optionally maintain CG at (0,0). */
+function prepareProjectGeometry(project: SectionProject): SectionProject {
+  const synchronized = synchronizeCombinedCutouts(synchronizeBoltDeductions(project.components));
+  const components = project.alignCGToOrigin
+    ? centerComponentsAtCG(synchronized)
+    : synchronized;
+  return components === project.components ? project : { ...project, components };
 }
 
 export interface StoreState {
   project: SectionProject;
   selectedComponentId: string | null;
   selectedIds: string[];
+  /** Selected interior void of a combined section (for Delete Cutout). */
+  selectedVoid: { combinedId: string; index: number } | null;
+  selectVoid: (combinedId: string, index: number) => void;
+  /** Delete a void (index) or subtractive cut-out (component id) of a combined section. */
+  deleteCutout: (target: { combinedId: string; index: number } | { cutoutId: string }) => string | null;
   properties: SectionProperties | null;
   stressResult: { maxCompression: number; maxTension: number; stressAt: (x: number, y: number) => number; neutralAxisAngle: number; trace: CalcTrace } | null;
   calcTrace: CalcTrace | null;
@@ -54,6 +85,7 @@ export interface StoreState {
   addComponent: (type: SectionComponent['type']) => void;
   addCustomShape: (name: string, points: { x: number; y: number }[]) => string;
   updateComponent: (id: string, updates: Partial<SectionComponent>, opts?: { history?: boolean }) => void;
+  moveComponents: (moves: { id: string; position: Point }[], opts?: { history?: boolean }) => void;
   deleteComponent: (id: string) => void;
   deleteComponents: (ids: string[]) => void;
   duplicateComponent: (id: string) => void;
@@ -63,6 +95,15 @@ export interface StoreState {
   setLoads: (loads: StressInput) => void;
   setProjectMeta: (name: string, description: string) => void;
   setUnits: (u: LengthUnit) => void;
+  toggleCGOrigin: () => void;
+  /** Combine shapes into one closed section; returns an error message on failure. */
+  combineShapes: (ids: string[]) => string | null;
+  /** Restore a combined section's last uncombined state. */
+  uncombineShape: (id: string) => string | null;
+  /** Remove the portions of a combined section's cut-outs that overlap its material. */
+  removeOverlap: (id: string) => string | null;
+  /** Summary of the last Combine / Remove Overlapping Portion operation. */
+  overlapNotice: string | null;
   undo: () => void;
   redo: () => void;
   recalculate: () => void;
@@ -73,6 +114,7 @@ export function useStore(): StoreState {
   const [project, setProjectState] = useState<SectionProject>(createDefaultProject);
   const [selectedComponentId, setSelectedComponentId] = useState<string | null>(null);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [selectedVoid, setSelectedVoid] = useState<{ combinedId: string; index: number } | null>(null);
   const [properties, setProperties] = useState<SectionProperties | null>(null);
   const [stressResult, setStressResult] = useState<StoreState['stressResult']>(null);
   const [calcTrace, setCalcTrace] = useState<CalcTrace | null>(null);
@@ -87,7 +129,9 @@ export function useStore(): StoreState {
   }, []);
 
   const recalculate = useCallback((proj?: SectionProject) => {
-    const p = proj ?? project;
+    const source = proj ?? project;
+    const p = prepareProjectGeometry(source);
+    if (p !== source) setProjectState(p);
     const result = computeSectionProperties(p.components);
     setProperties(result.props);
     setCalcTrace(result.trace);
@@ -102,25 +146,26 @@ export function useStore(): StoreState {
 
   const setProject = useCallback((p: SectionProject) => {
     pushUndo(project);
-    setProjectState(p);
-    // recalculate with new project
-    const result = computeSectionProperties(p.components);
+    const centeredProject = prepareProjectGeometry(p);
+    setProjectState(centeredProject);
+    // Recalculate after moving the dynamic CG reference to (0,0).
+    const result = computeSectionProperties(centeredProject.components);
     setProperties(result.props);
     setCalcTrace(result.trace);
-    if (p.loads && (p.loads.P !== 0 || p.loads.Mx !== 0 || p.loads.My !== 0)) {
-      const sr = computeStress(result.props, p.loads);
+    if (centeredProject.loads && (centeredProject.loads.P !== 0 || centeredProject.loads.Mx !== 0 || centeredProject.loads.My !== 0)) {
+      const sr = computeStress(result.props, centeredProject.loads);
       setStressResult(sr);
     } else {
       setStressResult(null);
     }
-    setQaMessages(validateComponents(p.components));
+    setQaMessages(validateComponents(centeredProject.components));
   }, [project, pushUndo]);
 
   const updateProjectAndRecalc = useCallback((updater: (p: SectionProject) => SectionProject, history = true) => {
     setProjectState(prev => {
       if (history) pushUndo(prev);
-      const next = updater(prev);
-      next.updatedAt = new Date().toISOString();
+      const updated = updater(prev);
+      const next = prepareProjectGeometry({ ...updated, updatedAt: new Date().toISOString() });
       // schedule recalculate
       setTimeout(() => {
         const result = computeSectionProperties(next.components);
@@ -204,6 +249,16 @@ export function useStore(): StoreState {
     }), opts?.history !== false);
   }, [updateProjectAndRecalc]);
 
+  /** Move several components in one state update (multi-object drag). */
+  const moveComponents = useCallback((moves: { id: string; position: Point }[], opts?: { history?: boolean }) => {
+    if (moves.length === 0) return;
+    const byId = new Map(moves.map(move => [move.id, move.position]));
+    updateProjectAndRecalc(p => ({
+      ...p,
+      components: p.components.map(c => (byId.has(c.id) ? { ...c, position: byId.get(c.id)! } : c)),
+    }), opts?.history !== false);
+  }, [updateProjectAndRecalc]);
+
   const deleteComponent = useCallback((id: string) => {
     updateProjectAndRecalc(p => ({
       ...p,
@@ -256,6 +311,66 @@ export function useStore(): StoreState {
   const setUnits = useCallback((units: LengthUnit) => {
     setProjectState(prev => ({ ...prev, units }));
   }, []);
+
+  const [overlapNotice, setOverlapNotice] = useState<string | null>(null);
+
+  const combineShapes = useCallback((ids: string[]): string | null => {
+    const outcome = combineComponents(project.components, ids, uuid());
+    if (!outcome.ok) return outcome.error;
+    setOverlapNotice(describeOverlapReport(outcome.report, project.units));
+    updateProjectAndRecalc(p => ({ ...p, components: outcome.components }));
+    setSelectedIds([outcome.combinedId]);
+    setSelectedComponentId(outcome.combinedId);
+    return null;
+  }, [project.components, project.units, updateProjectAndRecalc]);
+
+  const removeOverlap = useCallback((id: string): string | null => {
+    const outcome = removeOverlappingPortion(project.components, id);
+    if (!outcome.ok) return outcome.error;
+    updateProjectAndRecalc(p => ({ ...p, components: outcome.components }));
+    setOverlapNotice(describeOverlapReport(outcome.report, project.units) ?? 'Cut-outs did not overlap the material; they were removed.');
+    setSelectedIds([id]);
+    setSelectedComponentId(id);
+    return null;
+  }, [project.components, project.units, updateProjectAndRecalc]);
+
+  const uncombineShape = useCallback((id: string): string | null => {
+    const outcome = uncombineComponent(project.components, id);
+    if (!outcome.ok) return outcome.error;
+    setOverlapNotice(null);
+    updateProjectAndRecalc(p => ({ ...p, components: outcome.components }));
+    setSelectedIds(outcome.restoredIds);
+    setSelectedComponentId(outcome.restoredIds[outcome.restoredIds.length - 1] ?? null);
+    return null;
+  }, [project.components, updateProjectAndRecalc]);
+
+  const selectVoid = useCallback((combinedId: string, index: number) => {
+    setSelectedComponentId(combinedId);
+    setSelectedIds([combinedId]);
+    setSelectedVoid({ combinedId, index });
+  }, []);
+
+  const deleteCutout = useCallback((target: { combinedId: string; index: number } | { cutoutId: string }): string | null => {
+    const outcome = 'cutoutId' in target
+      ? deleteCombinedCutout(project.components, target.cutoutId)
+      : deleteCombinedVoid(project.components, target.combinedId, target.index);
+    if (!outcome.ok) return outcome.error;
+    updateProjectAndRecalc(p => ({ ...p, components: outcome.components }));
+    setSelectedVoid(null);
+    if ('cutoutId' in target) {
+      const parentId = project.components.find(c => c.id === target.cutoutId)?.parentId ?? null;
+      setSelectedComponentId(parentId);
+      setSelectedIds(parentId ? [parentId] : []);
+    }
+    return null;
+  }, [project.components, updateProjectAndRecalc]);
+
+  const toggleCGOrigin = useCallback(() => {
+    updateProjectAndRecalc(project => ({
+      ...project,
+      alignCGToOrigin: !project.alignCGToOrigin,
+    }));
+  }, [updateProjectAndRecalc]);
 
   const undo = useCallback(() => {
     const stack = undoStackRef.current;
@@ -310,6 +425,9 @@ export function useStore(): StoreState {
     project,
     selectedComponentId,
     selectedIds,
+    selectedVoid,
+    selectVoid,
+    deleteCutout,
     properties,
     stressResult,
     calcTrace,
@@ -320,14 +438,17 @@ export function useStore(): StoreState {
     addComponent,
     addCustomShape,
     updateComponent,
+    moveComponents,
     deleteComponent,
     deleteComponents,
     duplicateComponent,
     selectComponent: (id: string | null) => {
+      setSelectedVoid(null);
       setSelectedComponentId(id);
       setSelectedIds(id !== null ? [id] : []);
     },
     selectComponents: (ids: string[]) => {
+      setSelectedVoid(null);
       setSelectedIds(ids);
       setSelectedComponentId(ids.length > 0 ? ids[ids.length - 1] : null);
     },
@@ -335,6 +456,11 @@ export function useStore(): StoreState {
     setLoads,
     setProjectMeta,
     setUnits,
+    toggleCGOrigin,
+    combineShapes,
+    uncombineShape,
+    removeOverlap,
+    overlapNotice,
     undo,
     redo,
     recalculate,

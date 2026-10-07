@@ -3,21 +3,23 @@ import React, { useState, useRef, useEffect } from 'react';
 
 interface Props {
   onExportPDF: () => void;
+  onExportDetailedPDF: () => void;
   onExportJSON: () => void;
   onExportDXF: () => void;
   onExportExcel: () => void;
   onExportCSV: () => void;
-  onImportJSON: () => void;
+  onImportFile: () => void;
   disabled?: boolean;
 }
 
 export default function ExportMenu({ 
   onExportPDF, 
+  onExportDetailedPDF,
   onExportJSON, 
   onExportDXF, 
   onExportExcel, 
   onExportCSV,
-  onImportJSON,
+  onImportFile,
   disabled 
 }: Props) {
   const [isOpen, setIsOpen] = useState(false);
@@ -43,8 +45,8 @@ export default function ExportMenu({
       {/* Import Button */}
       <button 
         className="btn btn-ghost text-xs mr-1" 
-        onClick={onImportJSON}
-        title="Import Section (.json)"
+        onClick={onImportFile}
+        title="Import Section (.dxf, .json)"
       >
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
           <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/>
@@ -93,7 +95,24 @@ export default function ExportMenu({
             </svg>
             <div>
               <div className="font-medium">Export PDF</div>
-              <div className="text-[10px]" style={{ color: 'var(--text-muted)' }}>Engineering report with drawing</div>
+              <div className="text-[10px]" style={{ color: 'var(--text-muted)' }}>Single-page section sheet (figure + properties)</div>
+            </div>
+          </button>
+
+          <button
+            className="w-full px-3 py-2 text-left text-xs flex items-center gap-2 hover:bg-opacity-10 transition-colors"
+            style={{ color: 'var(--text-primary)' }}
+            onMouseEnter={e => (e.currentTarget.style.background = 'var(--bg-tertiary)')}
+            onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
+            onClick={() => handleAction(onExportDetailedPDF)}
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/>
+              <polyline points="14,2 14,8 20,8"/>
+            </svg>
+            <div>
+              <div className="font-medium">Detailed PDF Report</div>
+              <div className="text-[10px]" style={{ color: 'var(--text-muted)' }}>Multi-page: components, vertices, calc trace</div>
             </div>
           </button>
 

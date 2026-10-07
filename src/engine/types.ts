@@ -35,10 +35,41 @@ export interface Material {
   color: string;
 }
 
+export interface BoltDeductionConfig {
+  enabled: boolean;
+  /** Nominal bolt-hole diameter; becomes the deduction rectangle depth. */
+  diameter: number;
+  /** Number of deduction rectangles along the plate. */
+  count: number;
+  /** Default centre-to-centre spacing used for newly added holes. */
+  spacing: number;
+  /**
+   * Distance from the plate start edge (local bottom for vertical plates,
+   * local left for horizontal plates) to the centre of the first hole.
+   */
+  edgeDistance?: number;
+  /**
+   * spacings[i] = centre-to-centre distance from hole i+1 to hole i+2, i.e.
+   * each hole's spacing from the immediately preceding hole. Length count−1.
+   */
+  spacings?: number[];
+  /** Distance from the last hole centre to the plate end edge (Edge-2). */
+  edge2Distance?: number;
+  /**
+   * Which edge distance is held when the plate length changes. The opposite
+   * edge distance is recalculated so that Edge-1 + ΣH + Edge-2 = plate length.
+   */
+  reference?: 'edge1' | 'edge2';
+  /** Grouped deductions remain driven by and collapsed beneath the parent. */
+  grouped: boolean;
+}
+
 export interface ComponentGeometry {
   // Rectangle
   width?: number;
   height?: number;
+  /** Rectangular net-section reductions associated with an individual plate. */
+  boltDeductions?: BoltDeductionConfig;
   // Circle / Hollow circle
   radius?: number;
   outerRadius?: number;
@@ -47,6 +78,12 @@ export interface ComponentGeometry {
   vertices?: [Point, Point, Point];
   // Polygon
   points?: Point[];
+  /**
+   * Combined sections only: exact material rings relative to `position`
+   * ([outer CCW, ...voids CW]) used for clean rendering and re-combining.
+   * `points` holds the equivalent single continuous (keyholed) boundary.
+   */
+  rings?: Point[][];
   // I-Section
   flangeWidth?: number;
   flangeThickness?: number;
@@ -81,6 +118,17 @@ export interface SectionComponent {
   materialId: string;
   visible: boolean;
   locked: boolean;
+  /** Parent rectangular plate for an associated net-section deduction. */
+  parentId?: string;
+  associationKind?: 'bolt-deduction' | 'combined-cutout';
+  generatedIndex?: number;
+  /** True while geometry is driven by the grouped parent plate. */
+  managedByParent?: boolean;
+  /** Combined sections: deep snapshot of the members, restored by Uncombine. */
+  combinedFrom?: SectionComponent[];
+  /** Combined cut-outs: offset/rotation relative to the combined section. */
+  combinedOffset?: Point;
+  combinedBaseRotation?: number;
 }
 
 export interface SectionProperties {
@@ -172,6 +220,8 @@ export interface SectionProject {
   createdAt: string;
   updatedAt: string;
   revision: number;
+  /** Keep the composite centroid aligned to the global coordinate origin. */
+  alignCGToOrigin?: boolean;
 }
 
 // File format with schema version for import/export

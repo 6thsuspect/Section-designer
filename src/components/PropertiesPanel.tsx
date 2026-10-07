@@ -1,8 +1,21 @@
 'use client';
 import React, { useState } from 'react';
 import type { StoreState } from '@/store/useStore';
-import type { LengthUnit } from '@/engine/types';
-import { fmt, fmtSci } from '@/engine/geometry';
+import type { ComponentGeometry, LengthUnit, Point, SectionComponent } from '@/engine/types';
+import {
+  DEFAULT_BOLT_DEDUCTIONS,
+  deductionEdgeOffsets,
+  deductionPatternIssues,
+  plateDeductionAxis,
+  resolveDeductionLayout,
+  withCount,
+  withEdge2Distance,
+  withEdgeDistance,
+  withReference,
+  withSpacing,
+} from '@/engine/boltDeductions';
+import { computeComponentProps, fmt, fmtSci } from '@/engine/geometry';
+import { combinedPieceCount, signedArea } from '@/engine/combine';
 
 interface Props {
   store: StoreState;
@@ -290,18 +303,66 @@ function PropRow({ label, value, highlight }: { label: string; value: string; hi
 
 function GeometryEditor({ store, comp, onEditCoordinates }: {
   store: StoreState;
-  comp: import('@/engine/types').SectionComponent;
-  onEditCoordinates?: (comp: import('@/engine/types').SectionComponent) => void;
+  comp: SectionComponent;
+  onEditCoordinates?: (comp: SectionComponent) => void;
 }) {
   const g = comp.geometry;
 
-  const update = (geo: Partial<import('@/engine/types').ComponentGeometry>) => {
+  const update = (geo: Partial<ComponentGeometry>) => {
     store.updateComponent(comp.id, { geometry: { ...comp.geometry, ...geo } });
   };
 
-  const updatePos = (pos: Partial<import('@/engine/types').Point>) => {
+  const updatePos = (pos: Partial<Point>) => {
     store.updateComponent(comp.id, { position: { ...comp.position, ...pos } });
   };
+
+  if (comp.associationKind === 'combined-cutout' && comp.parentId && comp.managedByParent) {
+    const parent = store.project.components.find(component => component.id === comp.parentId);
+    return (
+      <div>
+        <div className="panel-header">⊖ {comp.name}</div>
+        <div className="p-3 text-xs space-y-2" style={{ color: 'var(--text-secondary)' }}>
+          <div>This subtractive cut-out is part of <strong>{parent?.name ?? 'a combined section'}</strong> and moves with it.</div>
+          <div className="text-[10px]" style={{ color: 'var(--text-muted)' }}>
+            Uncombine the section to edit the original shape (e.g. its bolt-hole deductions).
+          </div>
+          <button className="btn btn-danger w-full text-xs" onClick={() => store.deleteCutout({ cutoutId: comp.id })}>
+            🗑 Delete Cutout
+          </button>
+          {parent && (
+            <button className="btn btn-primary w-full text-xs" onClick={() => store.selectComponent(parent.id)}>
+              Select Combined Section
+            </button>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  if (comp.associationKind === 'bolt-deduction' && comp.parentId && comp.managedByParent) {
+    const plate = store.project.components.find(component => component.id === comp.parentId);
+    return (
+      <div>
+        <div className="panel-header">▭ {comp.name}</div>
+        <div className="p-3 text-xs space-y-2" style={{ color: 'var(--text-secondary)' }}>
+          <div>This grouped rectangular deduction is driven by <strong>{plate?.name ?? 'its parent plate'}</strong>.</div>
+          <div className="grid grid-cols-2 gap-2 font-mono">
+            <span>Width (plate t)</span><span>{fmt(comp.geometry.width ?? 0)} {store.project.units}</span>
+            <span>Depth (hole d)</span><span>{fmt(comp.geometry.height ?? 0)} {store.project.units}</span>
+            <span>Operation</span><span style={{ color: 'var(--danger)' }}>Subtract</span>
+          </div>
+          <div className="text-[10px]" style={{ color: 'var(--text-muted)' }}>
+            Ungroup from the parent plate to edit this deduction as an independent rectangular shape.
+          </div>
+          {plate && (
+            <button className="btn btn-primary w-full text-xs" onClick={() => store.selectComponent(plate.id)}>
+              Select Parent Plate
+            </button>
+          )}
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div>
@@ -316,6 +377,10 @@ function GeometryEditor({ store, comp, onEditCoordinates }: {
           onChange={e => store.updateComponent(comp.id, { name: e.target.value })}
         />
       </div>
+
+      {comp.combinedFrom && comp.combinedFrom.length > 0 && (
+        <CombinedSectionInfo store={store} comp={comp} />
+      )}
 
       {/* Custom coordinate geometry: point count + coordinate editor */}
       {(comp.type === 'custom-shape' || comp.type === 'polygon') && (
@@ -415,6 +480,11 @@ function GeometryEditor({ store, comp, onEditCoordinates }: {
         )}
       </div>
 
+      {/* Rectangular net-section bolt-hole deductions for individual plates */}
+      {comp.type === 'rectangle' && comp.associationKind !== 'bolt-deduction' && (
+        <BoltDeductionEditor comp={comp} store={store} />
+      )}
+
       {/* Operation */}
       <div className="panel-header">Operation</div>
       <div className="p-2 flex gap-2">
@@ -433,6 +503,278 @@ function GeometryEditor({ store, comp, onEditCoordinates }: {
       </div>
     </div>
   );
+}
+
+function BoltDeductionEditor({ store, comp }: { store: StoreState; comp: SectionComponent }) {
+  const config = comp.geometry.boltDeductions;
+  const enabled = config?.enabled ?? false;
+  const grouped = config?.grouped ?? true;
+  const units = store.project.units;
+  const width = comp.geometry.width ?? 0;
+  const height = comp.geometry.height ?? 0;
+  const thickness = Math.min(width, height);
+  const ungroupedChildren = store.project.components.filter(component =>
+    component.parentId === comp.id && component.associationKind === 'bolt-deduction' && !component.managedByParent,
+  ).length;
+  const [mode, setMode] = useState<'chain' | 'independent'>('chain');
+  const setConfig = (updates: Partial<NonNullable<ComponentGeometry['boltDeductions']>>) => {
+    const next = { ...(config ?? DEFAULT_BOLT_DEDUCTIONS), ...updates };
+    store.updateComponent(comp.id, { geometry: { ...comp.geometry, boltDeductions: next } });
+  };
+  const commit = (next: NonNullable<ComponentGeometry['boltDeductions']>) =>
+    store.updateComponent(comp.id, { geometry: { ...comp.geometry, boltDeductions: next } });
+  const { length, alongX } = plateDeductionAxis(comp);
+  const layout = config ? resolveDeductionLayout(config, length) : null;
+  const offsets = layout ? deductionEdgeOffsets(layout) : [];
+  const issues = enabled ? deductionPatternIssues(comp) : [];
+  const valid = issues.length === 0;
+  const badHoles = new Set(issues.map(issue => issue.hole));
+  const startEdge = alongX ? 'left' : 'bottom';
+  const endEdge = alongX ? 'right' : 'top';
+
+  return (
+    <>
+      <div className="panel-header flex items-center justify-between">
+        <span>Bolt-Hole Deduction</span>
+        <label className="flex items-center gap-1.5 text-[10px] font-normal normal-case cursor-pointer" style={{ color: 'var(--text-secondary)' }}>
+          <input
+            type="checkbox"
+            checked={enabled}
+            disabled={!grouped}
+            onChange={event => setConfig({ enabled: event.target.checked, grouped: true })}
+          />
+          Rectangular deduction
+        </label>
+      </div>
+      {(enabled || !grouped) && config && layout && (
+        <div className="p-2 space-y-2">
+          <fieldset disabled={!grouped} className="space-y-2" style={{ opacity: grouped ? 1 : 0.55 }}>
+            <div className="grid grid-cols-2 gap-2">
+              <NumInput label="Hole Diameter (Depth)" value={config.diameter} onChange={diameter => setConfig({ diameter: Math.max(0, diameter) })} />
+              <NumInput label="Number of Holes" value={layout.count} onChange={count => commit(withCount(config, length, Math.round(count)))} />
+              <div>
+                <label className="text-[10px] font-semibold uppercase mb-0.5 block" style={{ color: 'var(--text-muted)' }}>Width = Plate t</label>
+                <div className="input-field font-mono" style={{ opacity: 0.8 }}>{fmt(thickness)} {units}</div>
+              </div>
+              <div>
+                <label className="text-[10px] font-semibold uppercase mb-0.5 block" style={{ color: 'var(--text-muted)' }}>Plate Length</label>
+                <div className="input-field font-mono" style={{ opacity: 0.8 }}>{fmt(length)} {units}</div>
+              </div>
+            </div>
+
+            <div>
+              <div className="text-[10px] font-semibold uppercase mb-1" style={{ color: 'var(--text-muted)' }}>When a distance changes</div>
+              <div className="flex gap-1">
+                <button
+                  type="button"
+                  className={`btn flex-1 text-[10px] ${mode === 'chain' ? 'btn-primary' : 'btn-ghost'}`}
+                  onClick={() => setMode('chain')}
+                  title="Following holes keep their spacings and shift with the edited hole"
+                >Shift following holes</button>
+                <button
+                  type="button"
+                  className={`btn flex-1 text-[10px] ${mode === 'independent' ? 'btn-primary' : 'btn-ghost'}`}
+                  onClick={() => setMode('independent')}
+                  title="Only the edited hole moves; all other holes keep their positions"
+                >Move this hole only</button>
+              </div>
+            </div>
+
+            <div>
+              <div className="text-[10px] font-semibold uppercase mb-1" style={{ color: 'var(--text-muted)' }}>Hold when plate length changes</div>
+              <div className="flex gap-1">
+                {(['edge1', 'edge2'] as const).map(reference => (
+                  <button
+                    key={reference}
+                    type="button"
+                    className={`btn flex-1 text-[10px] ${layout.reference === reference ? 'btn-primary' : 'btn-ghost'}`}
+                    onClick={() => commit(withReference(config, length, reference))}
+                    title={reference === 'edge1'
+                      ? 'Edge-1 stays fixed; Edge-2 is recalculated when the plate length changes'
+                      : 'Edge-2 stays fixed; Edge-1 is recalculated when the plate length changes'}
+                  >{reference === 'edge1' ? `Edge-1 (${startEdge})` : `Edge-2 (${endEdge})`}</button>
+                ))}
+              </div>
+            </div>
+
+            <table className="w-full text-[10px]" style={{ color: 'var(--text-secondary)' }}>
+              <thead>
+                <tr style={{ color: 'var(--text-muted)' }}>
+                  <th className="text-left font-semibold py-0.5">Segment</th>
+                  <th className="text-left font-semibold py-0.5">Distance ({units})</th>
+                  <th className="text-right font-semibold py-0.5">Hole @ {startEdge}</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr style={{ color: badHoles.has(1) ? 'var(--danger)' : undefined }}>
+                  <td className="py-0.5 pr-1 whitespace-nowrap font-semibold">Edge-1 → H1</td>
+                  <td className="py-0.5 pr-1">
+                    <input
+                      type="number" step="any" className="input-field"
+                      aria-label="Edge-1: start edge to hole 1"
+                      value={round6(layout.edgeDistance)}
+                      onChange={event => commit(withEdgeDistance(config, length, parseFloat(event.target.value) || 0, mode))}
+                    />
+                  </td>
+                  <td className="py-0.5 text-right font-mono">H1: {fmt(offsets[0])}</td>
+                </tr>
+                {layout.spacings.map((spacing, gap) => (
+                  <tr key={gap} style={{ color: badHoles.has(gap + 2) ? 'var(--danger)' : undefined }}>
+                    <td className="py-0.5 pr-1 whitespace-nowrap">H{gap + 1} → H{gap + 2}</td>
+                    <td className="py-0.5 pr-1">
+                      <input
+                        type="number" step="any" className="input-field"
+                        aria-label={`Spacing from hole ${gap + 1} to hole ${gap + 2}`}
+                        value={round6(spacing)}
+                        onChange={event => commit(withSpacing(config, length, gap, parseFloat(event.target.value) || 0, mode))}
+                      />
+                    </td>
+                    <td className="py-0.5 text-right font-mono">H{gap + 2}: {fmt(offsets[gap + 1])}</td>
+                  </tr>
+                ))}
+                <tr style={{ color: badHoles.has(layout.count) && layout.edge2Distance < config.diameter / 2 ? 'var(--danger)' : undefined }}>
+                  <td className="py-0.5 pr-1 whitespace-nowrap font-semibold">H{layout.count} → Edge-2</td>
+                  <td className="py-0.5 pr-1">
+                    <input
+                      type="number" step="any" className="input-field"
+                      aria-label="Edge-2: last hole to end edge"
+                      value={round6(layout.edge2Distance)}
+                      onChange={event => commit(withEdge2Distance(config, length, parseFloat(event.target.value) || 0, mode))}
+                    />
+                  </td>
+                  <td className="py-0.5 text-right font-mono" style={{ color: 'var(--text-muted)' }}>
+                    {layout.reference === 'edge1' ? 'auto' : 'held'}
+                  </td>
+                </tr>
+                <tr style={{ color: 'var(--text-muted)', borderTop: '1px solid var(--border)' }}>
+                  <td className="py-0.5 pr-1 whitespace-nowrap">Σ = Plate L</td>
+                  <td className="py-0.5 pr-1 font-mono" colSpan={2}>
+                    {fmt(layout.edgeDistance)} + {fmt(layout.spacings.reduce((sum, spacing) => sum + spacing, 0))} + {fmt(layout.edge2Distance)} = {fmt(length)} {units}
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </fieldset>
+          <div className="text-[10px]" style={{ color: 'var(--text-muted)' }}>
+            Edge-1 ({startEdge} face) → H1 → H2 → H3 → … → Edge-2 ({endEdge} face). All distances are to hole centres;
+            the non-held edge distance is calculated automatically so the sequence always sums to the plate length.
+            Each deduction is a {fmt(thickness)} × {fmt(config.diameter)} {units} rectangle (plate t × hole d).
+            Net area deducted: {fmt(layout.count * config.diameter * thickness)} {units}².
+          </div>
+          {grouped && !valid && (
+            <div className="text-[10px] p-2 rounded space-y-0.5" style={{ color: 'var(--danger)', background: 'rgba(239,68,68,0.1)' }}>
+              {issues.map((issue, i) => <div key={i}>{issue.message}</div>)}
+            </div>
+          )}
+          <button
+            className="btn btn-ghost w-full text-xs"
+            onClick={() => setConfig({ grouped: !grouped, enabled: true })}
+            title={grouped ? 'Release the deduction rectangles into separate editable shapes' : 'Regroup deductions with the plate; they snap back to the parametric pattern'}
+          >
+            {grouped ? '⧉ Ungroup into separate shapes' : '⊞ Group with plate'}
+          </button>
+          <div className="text-[10px] text-center" style={{ color: 'var(--text-muted)' }}>
+            {grouped
+              ? 'Grouped: deductions follow the plate size, position, and rotation.'
+              : `Ungrouped: ${ungroupedChildren} associated deduction shape(s) can be edited individually. Regrouping regenerates the pattern.`}
+          </div>
+        </div>
+      )}
+    </>
+  );
+}
+
+function CombinedSectionInfo({ store, comp }: { store: StoreState; comp: SectionComponent }) {
+  const [error, setError] = useState<string | null>(null);
+  const members = comp.combinedFrom ?? [];
+  const cutoutList = store.project.components.filter(c => c.parentId === comp.id && c.associationKind === 'combined-cutout');
+  const cutouts = cutoutList.length;
+  const voidRings = (comp.geometry.rings ?? []).filter(ring => signedArea(ring) < 0);
+  const pieces = combinedPieceCount(comp);
+  const voids = voidRings.length;
+  const units = store.project.units;
+  return (
+    <>
+      <div className="panel-header">Combined Section</div>
+      <div className="p-2 space-y-2 text-[11px]" style={{ color: 'var(--text-secondary)' }}>
+        <div>
+          One closed boundary of <strong>{(comp.geometry.points ?? []).length}</strong> coordinates built from{' '}
+          <strong>{members.length}</strong> shape{members.length === 1 ? '' : 's'}
+          {voids > 0 && <> with <strong>{voids}</strong> internal void{voids === 1 ? '' : 's'} (keyhole-joined)</>}
+          {cutouts > 0 && <> and <strong>{cutouts}</strong> separate subtractive cut-out{cutouts === 1 ? '' : 's'}</>}.
+          {pieces > 1 && <> The remaining material forms <strong>{pieces}</strong> separate pieces (joined by zero-width bridges).</>}
+        </div>
+        {cutouts > 0 && (
+          <button
+            className="btn btn-primary w-full text-xs"
+            onClick={() => setError(store.removeOverlap(comp.id))}
+            title="Subtract the overlapping part of every cut-out from the boundary so only the actual remaining material is kept"
+          >
+            ✂ Remove Overlapping Portion
+          </button>
+        )}
+        {store.overlapNotice && store.selectedComponentId === comp.id && (
+          <div className="text-[10px] p-1.5 rounded" style={{ color: 'var(--success)', background: 'rgba(34,197,94,0.1)' }}>
+            {store.overlapNotice}
+          </div>
+        )}
+        <ul className="text-[10px] list-disc pl-4" style={{ color: 'var(--text-muted)' }}>
+          {members.slice(0, 8).map(member => (
+            <li key={member.id}>{member.operation === 'subtract' ? '− ' : ''}{member.name}</li>
+          ))}
+          {members.length > 8 && <li>… {members.length - 8} more</li>}
+        </ul>
+        {(voids > 0 || cutouts > 0) && (
+          <div>
+            <div className="text-[10px] font-semibold uppercase mb-1" style={{ color: 'var(--text-muted)' }}>Cut-outs &amp; Voids</div>
+            <div className="space-y-1">
+              {voidRings.map((ring, index) => {
+                const selected = store.selectedVoid?.combinedId === comp.id && store.selectedVoid.index === index;
+                return (
+                  <div key={`void-${index}`} className="flex items-center gap-1 px-1 py-0.5 rounded"
+                    style={{ background: selected ? 'rgba(239,68,68,0.15)' : 'var(--bg-tertiary)', border: selected ? '1px solid var(--danger)' : '1px solid transparent' }}>
+                    <button className="flex-1 text-left text-[10px]" onClick={() => store.selectVoid(comp.id, index)} title="Highlight this void on the canvas">
+                      ◌ Void {index + 1} <span className="font-mono" style={{ color: 'var(--text-muted)' }}>{fmt(Math.abs(signedArea(ring)))} {units}²</span>
+                    </button>
+                    <button className="btn btn-danger text-[10px] px-1.5 py-0.5"
+                      onClick={() => setError(store.deleteCutout({ combinedId: comp.id, index }))}
+                      title="Delete Cutout: fill this void and rebuild the closed boundary">🗑</button>
+                  </div>
+                );
+              })}
+              {cutoutList.map(cutout => (
+                <div key={cutout.id} className="flex items-center gap-1 px-1 py-0.5 rounded" style={{ background: 'var(--bg-tertiary)' }}>
+                  <button className="flex-1 text-left text-[10px] truncate" onClick={() => store.selectComponent(cutout.id)} title={cutout.name}>
+                    ⊖ {cutout.name.replace(`${comp.name} — `, '')}{' '}
+                    <span className="font-mono" style={{ color: 'var(--text-muted)' }}>{fmt(computeComponentProps(cutout).area)} {units}²</span>
+                  </button>
+                  <button className="btn btn-danger text-[10px] px-1.5 py-0.5"
+                    onClick={() => setError(store.deleteCutout({ cutoutId: cutout.id }))}
+                    title="Delete Cutout: remove this subtractive cut-out">🗑</button>
+                </div>
+              ))}
+            </div>
+            <div className="text-[10px] mt-1" style={{ color: 'var(--text-muted)' }}>
+              Click a void on the canvas (or a row) and press Delete, or use 🗑. Uncombine still restores the original shapes.
+            </div>
+          </div>
+        )}
+        <button
+          className="btn btn-ghost w-full text-xs"
+          style={{ border: '1px solid var(--border)' }}
+          onClick={() => setError(store.uncombineShape(comp.id))}
+          title="Restore all original shapes exactly as they were before combining"
+        >
+          ⊟ Uncombine
+        </button>
+        {error && <div className="text-[10px]" style={{ color: 'var(--danger)' }}>{error}</div>}
+      </div>
+    </>
+  );
+}
+
+function round6(value: number): number {
+  return Math.round(value * 1e6) / 1e6;
 }
 
 function NumInput({ label, value, onChange }: { label: string; value: number; onChange: (v: number) => void }) {

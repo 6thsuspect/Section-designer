@@ -6,7 +6,8 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint .",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test:engineering": "node --experimental-strip-types --import ./scripts/ts-resolve.mjs scripts/verify-properties.mts"
   },
   "dependencies": {
     "@types/file-saver": "^2.0.7",
@@ -19,6 +20,7 @@
     "jspdf-autotable": "^5.0.8",
     "next": "16.2.6",
     "pg": "8.20.0",
+    "polygon-clipping": "^0.15.7",
     "react": "19.2.6",
     "react-dom": "19.2.6",
     "uuid": "^14.0.1"
