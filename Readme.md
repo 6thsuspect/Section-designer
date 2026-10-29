@@ -974,3 +974,30 @@ changelog because they may affect previously generated results.
 Built as a practical engineering productivity tool for structural
 engineers who need fast, transparent, and reusable section-property
 calculations.
+
+### MIDAS MCT boundary export
+
+Choose **Export → MIDAS MCT (.mct)** to download a non-tapered
+`*SECT-PSCVALUE` / `VALUE, GEN` section (section ID 1). The exporter writes
+three stiffness/property records followed by `OPOLY` and optional `IPOLY`
+records, with coordinate continuation lines matching the MIDAS command format.
+
+- Visible additive regions are unioned; visible subtractive regions are removed.
+  Hidden components are excluded. Separate material islands are rejected rather
+  than silently lost or joined by fictitious bridges.
+- Coordinates are centroid-relative: app X maps to MIDAS local Y and app Y maps
+  to local Z. A centroid-centre (`CC`) offset is used. `*UNIT` declares the current
+  project length unit; numeric coordinates are not rescaled. Importing this block
+  therefore changes the receiving model's active units. Rename section ID 1 if
+  that ID is already in use.
+- Openings use independent `IPOLY` rings, including openings in combined shapes.
+  Curves are approximated with 256 straight segments per full circle.
+- **Engineering limitation:** shear areas (`ASy`, `ASz`) and first-moment values
+  (`Qyb`, `Qzb`) are zero placeholders. `Ixx` uses the app's approximate torsion
+  calculation. The export confirmation and file comments flag these limitations.
+  Recalculate these properties in MIDAS before structural design; the MCT file
+  has not been import-tested in a licensed MIDAS installation.
+- Only general plane sections are exported; PSC, composite and tapered sections
+  and line/thickness models are not generated.
+
+Run `npm run test:midas` for boundary-export regression checks.

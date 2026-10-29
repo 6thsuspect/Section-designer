@@ -12,7 +12,7 @@ import SettingsDialog, { type AppSettings } from '@/components/SettingsDialog';
 import CustomShapeDialog from '@/components/CustomShapeDialog';
 import AboutDialog from '@/components/AboutDialog';
 import ImportDialog from '@/components/ImportDialog';
-import { downloadJSON, downloadCSV, exportPDF, exportDetailedPDF, downloadDXF, exportExcel } from '@/engine/exporters';
+import { downloadJSON, downloadCSV, exportPDF, exportDetailedPDF, downloadDXF, downloadMCT, exportExcel } from '@/engine/exporters';
 import { computeSectionProperties } from '@/engine/geometry';
 import type { Point, SectionProject, SectionComponent } from '@/engine/types';
 import { DEFAULT_CANVAS_THEME, normalizeCanvasThemeSettings, resolveCanvasPalette } from '@/engine/canvasTheme';
@@ -491,6 +491,7 @@ export default function Home() {
         onExportPDF={handleExportPDF}
         onExportDetailedPDF={handleExportDetailedPDF}
         onExportDXF={handleExportDXF}
+        onExportMCT={() => downloadMCT(store.project)}
         onExportExcel={handleExportExcel}
         onImportFile={() => setShowImport(true)}
         showGrid={showGrid}

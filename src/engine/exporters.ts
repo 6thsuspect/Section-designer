@@ -1,3 +1,4 @@
+import { exportMidasMCT } from './midasMct';
 import type { SectionProject, SectionProperties, CalcTrace, SectionFileFormat, SectionComponent, Point } from './types';
 import type { Worksheet, Fill, Style } from 'exceljs';
 import { fmt, fmtSci, computeComponentProps } from './geometry';
@@ -1311,5 +1312,26 @@ export async function exportDetailedPDF(
     console.error('PDF export failed:', error);
     const message = error instanceof Error ? error.message : String(error);
     alert(`PDF export failed:\n${message}`);
+  }
+}
+
+// Boundary-based MIDAS general section export.
+export function downloadMCT(project: SectionProject): void {
+  try {
+    const data = exportMidasMCT(project);
+    if (!window.confirm('Export MIDAS boundary section?\n\nShear areas and Q values are not calculated and will be exported as zero placeholders. Torsion is an app estimate. Recalculate these properties in MIDAS before structural design.')) return;
+    const url = URL.createObjectURL(new Blob([data], { type: 'text/plain;charset=utf-8' }));
+    const a = document.createElement('a');
+    try {
+      a.href = url;
+      a.download = `${project.name.replace(/[^a-zA-Z0-9_.-]+/g, '_') || 'Section'}.mct`;
+      document.body.appendChild(a);
+      a.click();
+    } finally {
+      a.remove();
+      URL.revokeObjectURL(url);
+    }
+  } catch (error) {
+    alert(`MIDAS MCT export failed:\n${error instanceof Error ? error.message : String(error)}`);
   }
 }

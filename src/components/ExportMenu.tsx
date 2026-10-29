@@ -6,6 +6,7 @@ interface Props {
   onExportDetailedPDF: () => void;
   onExportJSON: () => void;
   onExportDXF: () => void;
+  onExportMCT: () => void;
   onExportExcel: () => void;
   onExportCSV: () => void;
   onImportFile: () => void;
@@ -16,7 +17,8 @@ export default function ExportMenu({
   onExportPDF, 
   onExportDetailedPDF,
   onExportJSON, 
-  onExportDXF, 
+  onExportDXF,
+  onExportMCT,
   onExportExcel, 
   onExportCSV,
   onImportFile,
@@ -168,6 +170,17 @@ export default function ExportMenu({
               <div className="font-medium">Export Excel (.xlsx)</div>
               <div className="text-[10px]" style={{ color: 'var(--text-muted)' }}>Calculation workbook with formulas</div>
             </div>
+          </button>
+
+          <button
+            className="w-full px-3 py-2 text-left text-xs transition-colors"
+            style={{ color: 'var(--text-primary)' }}
+            onMouseEnter={e => (e.currentTarget.style.background = 'var(--bg-tertiary)')}
+            onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
+            onClick={() => handleAction(onExportMCT)}
+          >
+            <div className="font-medium">MIDAS MCT (.mct)</div>
+            <div className="text-[10px]" style={{ color: 'var(--text-muted)' }}>General section boundaries (OPOLY / IPOLY)</div>
           </button>
 
           <div className="my-1 border-t" style={{ borderColor: 'var(--border)' }} />

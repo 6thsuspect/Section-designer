@@ -7,7 +7,8 @@
     "start": "next start",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
-    "test:engineering": "node --experimental-strip-types --import ./scripts/ts-resolve.mjs scripts/verify-properties.mts"
+    "test:engineering": "node --experimental-strip-types --import ./scripts/ts-resolve.mjs scripts/verify-properties.mts",
+    "test:midas": "node --experimental-strip-types --import ./scripts/ts-resolve.mjs scripts/verify-midas.mts"
   },
   "dependencies": {
     "@types/file-saver": "^2.0.7",

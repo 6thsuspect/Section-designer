@@ -12,6 +12,7 @@ interface ToolbarProps {
   onExportPDF: () => void;
   onExportDetailedPDF: () => void;
   onExportDXF: () => void;
+  onExportMCT: () => void;
   onExportExcel: () => void;
   onImportFile: () => void;
   showGrid: boolean;
@@ -31,7 +32,7 @@ interface ToolbarProps {
 
 export default function Toolbar({ 
   store, onSave, onLoad, 
-  onExportJSON, onExportCSV, onExportPDF, onExportDetailedPDF, onExportDXF, onExportExcel, onImportFile,
+  onExportJSON, onExportCSV, onExportPDF, onExportDetailedPDF, onExportDXF, onExportMCT, onExportExcel, onImportFile,
   showGrid, onToggleGrid, osnap, onToggleOsnap, osnapLabels, onToggleOsnapLabels, onFitView, onOpenSettings, onOpenAbout, hasSection,
   theme, onToggleTheme 
 }: ToolbarProps) {
@@ -139,6 +140,7 @@ export default function Toolbar({
         onExportDetailedPDF={onExportDetailedPDF}
         onExportJSON={onExportJSON}
         onExportDXF={onExportDXF}
+        onExportMCT={onExportMCT}
         onExportExcel={onExportExcel}
         onExportCSV={onExportCSV}
         onImportFile={onImportFile}
