@@ -91,7 +91,7 @@ export default function ExportMenu({
             onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
             onClick={() => handleAction(onExportPDF)}
           >
-            <svg className="shrink-0" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <svg className="shrink-0" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
               <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/>
               <polyline points="14,2 14,8 20,8"/>
             </svg>
@@ -108,7 +108,7 @@ export default function ExportMenu({
             onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
             onClick={() => handleAction(onExportDetailedPDF)}
           >
-            <svg className="shrink-0" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <svg className="shrink-0" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
               <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/>
               <polyline points="14,2 14,8 20,8"/>
             </svg>
@@ -125,7 +125,7 @@ export default function ExportMenu({
             onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
             onClick={() => handleAction(onExportJSON)}
           >
-            <svg className="shrink-0" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <svg className="shrink-0" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
               <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/>
               <polyline points="14,2 14,8 20,8"/>
               <path d="M8 13h2M8 17h2M14 13h2M14 17h2"/>
@@ -143,7 +143,7 @@ export default function ExportMenu({
             onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
             onClick={() => handleAction(onExportDXF)}
           >
-            <svg className="shrink-0" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <svg className="shrink-0" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
               <rect x="3" y="3" width="18" height="18" rx="2"/>
               <path d="M3 9h18M9 21V9"/>
             </svg>
@@ -160,7 +160,7 @@ export default function ExportMenu({
             onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
             onClick={() => handleAction(onExportExcel)}
           >
-            <svg className="shrink-0" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <svg className="shrink-0" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
               <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/>
               <polyline points="14,2 14,8 20,8"/>
               <line x1="8" y1="13" x2="16" y2="13"/>
@@ -179,7 +179,7 @@ export default function ExportMenu({
             onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
             onClick={() => handleAction(onExportMCT)}
           >
-            <svg className="shrink-0" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
+            <svg className="shrink-0" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
               <rect x="2" y="2" width="20" height="20" rx="3"/>
               <path d="M6 17V7l6 7 6-7v10" strokeLinejoin="round"/>
             </svg>
@@ -193,14 +193,14 @@ export default function ExportMenu({
 
           <button
             className="w-full px-3 py-2 text-left text-xs flex items-center gap-2 hover:bg-opacity-10 transition-colors"
-            style={{ color: 'var(--text-secondary)' }}
+            style={{ color: 'var(--text-primary)' }}
             onMouseEnter={e => (e.currentTarget.style.background = 'var(--bg-tertiary)')}
             onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
             onClick={() => handleAction(onExportCSV)}
           >
-            <svg className="shrink-0" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/>
-              <polyline points="14,2 14,8 20,8"/>
+            <svg className="shrink-0" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
+              <rect x="3" y="3" width="18" height="18" rx="2"/>
+              <path d="M3 9h18M3 15h18M9 3v18M15 3v18"/>
             </svg>
             <div>
               <div className="font-medium">Export CSV</div>
