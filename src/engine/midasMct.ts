@@ -1,3 +1,4 @@
+import { MIDAS_MCT_REFERENCE_HEADER } from './midasMctReference';
 import * as polygonClippingModule from 'polygon-clipping';
 import type { MultiPolygon, Polygon } from 'polygon-clipping';
 import type { Point, SectionProject, SectionComponent } from './types';
@@ -64,7 +65,7 @@ export function exportMidasMCT(project: SectionProject): string {
     '; Ixx is the app torsion estimate, NOT a MIDAS/FE torsion solution. Recalculate before design.',
     '*UNIT',
     `   N, ${unit}, KJ, C`,
-    '*SECT-PSCVALUE',
+    ...MIDAS_MCT_REFERENCE_HEADER.split('\n'),
     ` SECT=1, VALUE, ${name}, CC, 0, 0, 0, 0, 0, 0, YES, NO, GEN, YES, YES`,
     row([p.area, 0, 0, p.It, p.Ix, p.Iy]),
     row([yp, ym, zp, zm, 0, 0, perimeter(rings[0]), rings.slice(1).reduce((s, r) => s + perimeter(r), 0), ym, zm]),

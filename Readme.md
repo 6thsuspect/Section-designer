@@ -979,7 +979,8 @@ calculations.
 
 Choose **Export → MIDAS MCT (.mct)** to download a non-tapered
 `*SECT-PSCVALUE` / `VALUE, GEN` section (section ID 1). The exporter writes
-three stiffness/property records followed by `OPOLY` and optional `IPOLY`
+the complete default command-comment block from the supplied MIDAS reference,
+then three stiffness/property records followed by `OPOLY` and optional `IPOLY`
 records, with coordinate continuation lines matching the MIDAS command format.
 
 - Visible additive regions are unioned; visible subtractive regions are removed.

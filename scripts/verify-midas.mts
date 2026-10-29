@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { MIDAS_MCT_REFERENCE_HEADER } from '../src/engine/midasMctReference.ts';
 import { exportMidasMCT } from '../src/engine/midasMct.ts';
 import type { SectionComponent, SectionProject } from '../src/engine/types.ts';
 const rect = (x = 0, operation: 'add' | 'subtract' = 'add'): SectionComponent => ({
@@ -11,9 +12,10 @@ const project = (components: SectionComponent[]): SectionProject => ({
 });
 const stiffness = (text: string) => text.split('\r\n').find((s, i, a) => a[i - 1]?.startsWith(' SECT='))!.trim().split(',').map(Number);
 const basic = exportMidasMCT(project([rect()]));
-assert.ok(basic.includes('*SECT-PSCVALUE\r\n SECT=1, VALUE,'));
-assert.ok(basic.includes('OPOLY='));
-assert.ok(!basic.includes('IPOLY='));
+assert.ok(basic.includes(MIDAS_MCT_REFERENCE_HEADER.replace(/\n/g, '\r\n') + '\r\n SECT=1, VALUE,'));
+assert.equal(basic.split('*SECT-PSCVALUE').length - 1, 1);
+assert.ok(/^       OPOLY=/m.test(basic));
+assert.ok(!/^       IPOLY=/m.test(basic));
 assert.ok(!basic.includes('\n*INJECT'));
 assert.ok(basic.includes('N, MM, KJ, C'));
 const [area, , , , iyy, izz] = stiffness(basic);
@@ -24,7 +26,7 @@ const overlap = exportMidasMCT(project([rect(), rect(50)]));
 assert.equal(stiffness(overlap)[0], 30000);
 const hole = { ...rect(0, 'subtract'), geometry: { width: 20, height: 40 } };
 const hollow = exportMidasMCT(project([rect(), hole]));
-assert.ok(hollow.includes('IPOLY='));
+assert.ok(/^       IPOLY=/m.test(hollow));
 assert.equal(stiffness(hollow)[0], 19200);
 assert.equal(exportMidasMCT(project([rect(), { ...rect(400), visible: false }])), basic);
 assert.throws(() => exportMidasMCT(project([rect(), rect(400)])), /connected/);
@@ -33,6 +35,6 @@ assert.throws(() => exportMidasMCT(project([rect(), rect(0, 'subtract')])), /ent
 const translated = exportMidasMCT(project([{ ...rect(), position: { x: 1000, y: -2000 } }]));
 assert.equal(translated, basic);
 const box = exportMidasMCT(project([{ ...rect(), type: 'box', geometry: { width: 100, height: 200, wallThickness: 10 } }]));
-assert.ok(box.includes('IPOLY='));
+assert.ok(/^       IPOLY=/m.test(box));
 assert.equal(stiffness(box)[0], 5600);
 console.log('MIDAS export checks passed (format, units, stiffness, holes, union, visibility, translation, validation).');
