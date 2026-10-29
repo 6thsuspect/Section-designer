@@ -1,3 +1,4 @@
+import { visibleViewportBounds } from '../src/engine/viewport.ts';
 import assert from 'node:assert/strict';
 import {
   CAD_COMMANDS,
@@ -230,3 +231,12 @@ const draft = {
 assert.equal(draftInRect(draft, { x0: -1, y0: -1, x1: 1, y1: 1 }), false);
 assert.equal(draftInRect(draft, { x0: -1, y0: -1, x1: 1, y1: 1 }, true), true);
 assert.equal(draftInRect(draft, { x0: -11, y0: -1, x1: 11, y1: 1 }), true);
+
+const view = { x: -400, y: -400, w: 800, h: 800 };
+assert.deepEqual(visibleViewportBounds(view, 1200, 600), { x: -800, y: -400, w: 1600, h: 800 });
+assert.deepEqual(visibleViewportBounds(view, 600, 1200), { x: -400, y: -800, w: 800, h: 1600 });
+assert.deepEqual(visibleViewportBounds(view, 800, 800), view);
+assert.deepEqual(visibleViewportBounds(view, 0, 0), view);
+assert.deepEqual(visibleViewportBounds({ x: 1000, y: -250, w: 200, h: 100 }, 1200, 600), { x: 1000, y: -250, w: 200, h: 100 });
+assert.deepEqual(view, { x: -400, y: -400, w: 800, h: 800 });
+console.log('Full-canvas grid bounds checks passed (wide, tall, square, resized and panned viewports).');

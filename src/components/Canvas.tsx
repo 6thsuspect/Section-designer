@@ -1,5 +1,6 @@
 'use client';
 import React, { useRef, useState, useCallback, useEffect, useMemo } from 'react';
+import { visibleViewportBounds } from '@/engine/viewport';
 import { draftInRect } from '@/engine/cad';
 import type { CadApi } from './CadCommands';
 import type { StoreState } from '@/store/useStore';
@@ -426,6 +427,7 @@ export default function Canvas({ store, showGrid, osnap, osnapLabels = true, vie
   }, [store, svgToWorld]);
 
   const gridSize = cad?.spacing ?? getGridSize(viewBox.w);
+  const visibleBounds = visibleViewportBounds(viewBox, svgSize.w, svgSize.h);
 
   // World units per screen pixel for the current zoom (derived from viewBox +
   // element size, so overlays track wheel zoom / pan without a mouse move).
@@ -522,14 +524,14 @@ export default function Canvas({ store, showGrid, osnap, osnapLabels = true, vie
         {/* Grid */}
         {showGrid && (
           <>
-            <rect x={viewBox.x} y={viewBox.y} width={viewBox.w} height={viewBox.h} fill="url(#grid)" />
-            <rect x={viewBox.x} y={viewBox.y} width={viewBox.w} height={viewBox.h} fill="url(#grid-major)" />
+            <rect data-testid="canvas-grid-minor" x={visibleBounds.x} y={visibleBounds.y} width={visibleBounds.w} height={visibleBounds.h} fill="url(#grid)" pointerEvents="none" />
+            <rect data-testid="canvas-grid-major" x={visibleBounds.x} y={visibleBounds.y} width={visibleBounds.w} height={visibleBounds.h} fill="url(#grid-major)" pointerEvents="none" />
           </>
         )}
 
         {/* Axes */}
-        <line x1={viewBox.x} y1={0} x2={viewBox.x + viewBox.w} y2={0} stroke={palette.axisX} strokeWidth={viewBox.w * 0.001} />
-        <line x1={0} y1={viewBox.y} x2={0} y2={viewBox.y + viewBox.h} stroke={palette.axisY} strokeWidth={viewBox.w * 0.001} />
+        <line x1={visibleBounds.x} y1={0} x2={visibleBounds.x + visibleBounds.w} y2={0} stroke={palette.axisX} strokeWidth={viewBox.w * 0.001} />
+        <line x1={0} y1={visibleBounds.y} x2={0} y2={visibleBounds.y + visibleBounds.h} stroke={palette.axisY} strokeWidth={viewBox.w * 0.001} />
 
         {/* Y-axis flipped: in engineering, Y is up. We use SVG transform to flip. */}
         <g transform="scale(1, -1)">
