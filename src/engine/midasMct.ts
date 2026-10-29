@@ -14,6 +14,10 @@ function number(value: number): string {
 
 /** General, non-tapered VALUE section. Coordinates and stiffness use project length units. */
 export function exportMidasMCT(project: SectionProject): string {
+  const sectionNumber = project.sectionNumber ?? 1;
+  if (!Number.isSafeInteger(sectionNumber) || sectionNumber < 1) {
+    throw new Error('Section number must be a positive safe integer. Set it in Properties → Project Settings.');
+  }
   const visible = project.components.filter(c => c.visible);
   const regions = (operation: 'add' | 'subtract'): Polygon[] => visible
     .filter(c => c.operation === operation)
@@ -66,7 +70,7 @@ export function exportMidasMCT(project: SectionProject): string {
     '*UNIT',
     `   N, ${unit}, KJ, C`,
     ...MIDAS_MCT_REFERENCE_HEADER.split('\n'),
-    ` SECT=1, VALUE, ${name}, CC, 0, 0, 0, 0, 0, 0, YES, NO, GEN, YES, YES`,
+    ` SECT=${sectionNumber}, VALUE, ${name}, CC, 0, 0, 0, 0, 0, 0, YES, NO, GEN, YES, YES`,
     row([p.area, 0, 0, p.It, p.Ix, p.Iy]),
     row([yp, ym, zp, zm, 0, 0, perimeter(rings[0]), rings.slice(1).reduce((s, r) => s + perimeter(r), 0), ym, zm]),
     row([-ym, yp, yp, -ym, zp, zp, -zm, -zm]),

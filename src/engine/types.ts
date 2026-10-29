@@ -210,6 +210,8 @@ export interface CalcTrace {
 }
 
 export interface SectionProject {
+  /** MIDAS section ID; older projects default to 1. */
+  sectionNumber?: number;
   id: string;
   name: string;
   description: string;

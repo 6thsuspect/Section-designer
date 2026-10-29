@@ -978,7 +978,8 @@ calculations.
 ### MIDAS MCT boundary export
 
 Choose **Export → MIDAS MCT (.mct)** to download a non-tapered
-`*SECT-PSCVALUE` / `VALUE, GEN` section (section ID 1). The exporter writes
+`*SECT-PSCVALUE` / `VALUE, GEN` section. Set **Section Number** under **Properties → Project Settings** to choose
+the exported `SECT=` ID (positive integer, default 1 for new and older projects). The exporter writes
 the complete default command-comment block from the supplied MIDAS reference,
 then three stiffness/property records followed by `OPOLY` and optional `IPOLY`
 records, with coordinate continuation lines matching the MIDAS command format.
@@ -989,8 +990,8 @@ records, with coordinate continuation lines matching the MIDAS command format.
 - Coordinates are centroid-relative: app X maps to MIDAS local Y and app Y maps
   to local Z. A centroid-centre (`CC`) offset is used. `*UNIT` declares the current
   project length unit; numeric coordinates are not rescaled. Importing this block
-  therefore changes the receiving model's active units. Rename section ID 1 if
-  that ID is already in use.
+  therefore changes the receiving model's active units. Choose an unused Section Number if
+  the receiving model already contains that section ID.
 - Openings use independent `IPOLY` rings, including openings in combined shapes.
   Curves are approximated with 256 straight segments per full circle.
 - **Engineering limitation:** shear areas (`ASy`, `ASz`) and first-moment values

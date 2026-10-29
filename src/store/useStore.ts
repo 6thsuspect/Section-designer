@@ -29,6 +29,7 @@ function createDefaultProject(): SectionProject {
   return {
     id: uuid(),
     name: 'Untitled Section',
+    sectionNumber: 1,
     description: '',
     units: 'mm' as LengthUnit,
     components: [],
@@ -94,6 +95,7 @@ export interface StoreState {
   pushUndoSnapshot: () => void;
   setLoads: (loads: StressInput) => void;
   setProjectMeta: (name: string, description: string) => void;
+  setSectionNumber: (sectionNumber: number) => void;
   setUnits: (u: LengthUnit) => void;
   toggleCGOrigin: () => void;
   /** Combine shapes into one closed section; returns an error message on failure. */
@@ -304,6 +306,11 @@ export function useStore(): StoreState {
     updateProjectAndRecalc(p => ({ ...p, loads }));
   }, [updateProjectAndRecalc]);
 
+  const setSectionNumber = useCallback((sectionNumber: number) => {
+    if (!Number.isSafeInteger(sectionNumber) || sectionNumber < 1) return;
+    setProjectState(prev => ({ ...prev, sectionNumber, updatedAt: new Date().toISOString() }));
+  }, []);
+
   const setProjectMeta = useCallback((name: string, description: string) => {
     setProjectState(prev => ({ ...prev, name, description }));
   }, []);
@@ -455,6 +462,7 @@ export function useStore(): StoreState {
     pushUndoSnapshot,
     setLoads,
     setProjectMeta,
+    setSectionNumber,
     setUnits,
     toggleCGOrigin,
     combineShapes,

@@ -38,3 +38,10 @@ const box = exportMidasMCT(project([{ ...rect(), type: 'box', geometry: { width:
 assert.ok(/^       IPOLY=/m.test(box));
 assert.equal(stiffness(box)[0], 5600);
 console.log('MIDAS export checks passed (format, units, stiffness, holes, union, visibility, translation, validation).');
+
+assert.ok(exportMidasMCT({ ...project([rect()]), sectionNumber: 42 }).includes(' SECT=42, VALUE,'));
+assert.ok(exportMidasMCT({ ...project([rect()]), sectionNumber: 42 }).includes(MIDAS_MCT_REFERENCE_HEADER.replace(/\n/g, '\r\n')));
+for (const sectionNumber of [0, -1, 1.5, NaN, Infinity, Number.MAX_SAFE_INTEGER + 1]) {
+  assert.throws(() => exportMidasMCT({ ...project([rect()]), sectionNumber }), /Section number/);
+}
+console.log('Section number checks passed (custom ID, legacy default, invalid IDs, reference comments).');
