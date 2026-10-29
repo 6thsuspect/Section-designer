@@ -1,3 +1,4 @@
+import { dimensionGeometry, drawingEntityPoints } from './cad';
 import { exportMidasMCT } from './midasMct';
 import type { SectionProject, SectionProperties, CalcTrace, SectionFileFormat, SectionComponent, Point } from './types';
 import type { Worksheet, Fill, Style } from 'exceljs';
@@ -56,7 +57,8 @@ function validateDraftingEntities(project: SectionProject): void {
   if (!Array.isArray(project.drawingEntities)) throw new Error('Invalid CAD drawing entities.');
   const ids = new Set(project.components.map(c => c.id));
   for (const entity of project.drawingEntities) {
-    if (!entity || typeof entity.id !== 'string' || ids.has(entity.id) || !['line', 'polyline', 'arc', 'point'].includes(entity.kind) || !Array.isArray(entity.points) || entity.points.length < (entity.kind === 'point' ? 1 : 2) || entity.points.some(p => !p || !Number.isFinite(p.x) || !Number.isFinite(p.y))) throw new Error('Invalid CAD path or duplicate object ID.');
+    if (!entity || typeof entity.id !== 'string' || ids.has(entity.id) || !['line', 'polyline', 'arc', 'point', 'dimension'].includes(entity.kind) || !Array.isArray(entity.points) || entity.points.length < (entity.kind === 'point' ? 1 : 2) || entity.points.some(p => !p || !Number.isFinite(p.x) || !Number.isFinite(p.y))) throw new Error('Invalid CAD path or duplicate object ID.');
+    if (entity.kind === 'dimension' && (entity.points.length !== 3 || !['linear', 'aligned'].includes(entity.dimensionStyle ?? '') || (entity.dimensionStyle === 'linear' && (!entity.dimensionAxis || !Number.isFinite(entity.dimensionAxis.x) || !Number.isFinite(entity.dimensionAxis.y) || Math.abs(Math.hypot(entity.dimensionAxis.x, entity.dimensionAxis.y) - 1) > 1e-6)) || Math.hypot(entity.points[1].x - entity.points[0].x, entity.points[1].y - entity.points[0].y) < 1e-10)) throw new Error('Invalid CAD dimension.');
     ids.add(entity.id);
   }
 }
@@ -282,7 +284,7 @@ export function exportDXF(project: SectionProject, props: SectionProperties): st
   const drafting = project.drawingEntities ?? [];
   // Overall extents (components preferred, section bounds as fallback)
   let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
-  for (const outline of [...outlines, ...drafting.map(e => e.points)]) {
+  for (const outline of [...outlines, ...drafting.map(drawingEntityPoints)]) {
     for (const p of outline) {
       if (p.x < minX) minX = p.x;
       if (p.x > maxX) maxX = p.x;
@@ -317,7 +319,11 @@ export function exportDXF(project: SectionProject, props: SectionProperties): st
   });
 
   for (const entity of drafting) {
-    if (entity.kind === 'point') {
+    if (entity.kind === 'dimension') {
+      const dimension = dimensionGeometry(entity, textHeight * 0.3);
+      for (const [a, b] of dimension.segments) dxf += generateDXFLine(a.x, a.y, b.x, b.y, 'DIMENSIONS');
+      dxf += generateDXFText(dimension.label, dimension.text.x, dimension.text.y, textHeight, 'DIMENSIONS');
+    } else if (entity.kind === 'point') {
       const p = entity.points[0];
       dxf += `0\nPOINT\n8\nDRAFT\n10\n${p.x}\n20\n${p.y}\n30\n0\n`;
     } else dxf += generateDXFPolyline(entity.points, 'DRAFT', false);

@@ -280,6 +280,115 @@ async function main() {
     ),
   );
   assert.notEqual(input().value, firstCompletion);
+  const typeDraft = async (value: string) => {
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(dom.window.HTMLInputElement.prototype, 'value')!.set!.call(
+        input(),
+        value,
+      );
+      input().dispatchEvent(new dom.window.Event('input', { bubbles: true }));
+    });
+  };
+  const space = async (value: string) => {
+    await typeDraft(value);
+    await act(async () =>
+      input().dispatchEvent(
+        new dom.window.KeyboardEvent('keydown', {
+          key: ' ',
+          code: 'Space',
+          bubbles: true,
+          cancelable: true,
+        }),
+      ),
+    );
+  };
+  await typeDraft('di');
+  assert.ok(document.querySelector('[role="listbox"]'));
+  assert.ok(
+    Array.from(document.querySelectorAll('[role="option"]')).some((e) =>
+      e.textContent?.includes('DIMALIGNED'),
+    ),
+  );
+  await click(
+    Array.from(document.querySelectorAll('[role="option"]')).find((e) =>
+      e.textContent?.startsWith('DIM ('),
+    ) as HTMLElement,
+  );
+  assert.ok(document.querySelector('header')?.textContent?.includes('DIM'));
+  const countDimensions = () => document.querySelectorAll('[data-testid="cad-dimension"]').length;
+  const beforeDims = countDimensions();
+  await space('0,0');
+  await space('30,40');
+  await space('15,100');
+  assert.equal(countDimensions(), beforeDims + 1);
+  assert.ok(document.querySelector('[data-measurement="30"]'));
+  await space('dal');
+  await space('0,0');
+  await space('30,40');
+  await space('0,100');
+  assert.equal(countDimensions(), beforeDims + 2);
+  assert.ok(document.querySelector('[data-measurement="50"]'));
+  await submit('UNDO');
+  assert.equal(countDimensions(), beforeDims + 1);
+  await submit('REDO');
+  assert.equal(countDimensions(), beforeDims + 2);
+  // Space also finishes a path, just like empty Enter.
+  await space('l');
+  await space('2000,2000');
+  await space('2010,2000');
+  await space('');
+  assert.ok(document.querySelector('[role="log"]')?.textContent?.includes('LINE completed.'));
+  await submit('REC');
+  await submit('1000,1000');
+  await submit('1100,1050');
+  await typeDraft('st');
+  assert.ok(document.querySelector('[role="option"]')?.textContent?.startsWith('STRETCH'));
+  await space('st'); // incomplete command name accepts the first matching suggestion
+  await space('1090,990');
+  await space('1110,1060');
+  await space('0,0');
+  await space('50,0');
+  assert.ok(document.querySelector('[role="log"]')?.textContent?.includes('STRETCH completed.'));
+  await submit('SELECT');
+  await submit('WINDOW');
+  await submit('999,999');
+  await submit('1151,1051');
+  await submit('LIST');
+  assert.ok(document.querySelector('[role="log"]')?.textContent?.includes('area=7500.000000'));
+  await submit('sc');
+  await submit('1000,1000');
+  await submit('2');
+  await submit('LIST');
+  assert.ok(document.querySelector('[role="log"]')?.textContent?.includes('area=30000.00000'));
+  await submit('DIM');
+  await submit('0,0');
+  await submit('10,0');
+  await act(async () =>
+    svg.dispatchEvent(
+      new dom.window.MouseEvent('pointermove', { bubbles: true, clientX: 500, clientY: 300 }),
+    ),
+  );
+  assert.equal(countDimensions(), beforeDims + 3, 'dimension preview should appear');
+  await submit('CANCEL');
+  assert.equal(countDimensions(), beforeDims + 2);
+  await typeDraft('sc');
+  await act(async () =>
+    input().dispatchEvent(
+      new dom.window.KeyboardEvent('keydown', {
+        key: 'ArrowDown',
+        bubbles: true,
+        cancelable: true,
+      }),
+    ),
+  );
+  assert.equal(
+    document
+      .querySelector('[role="option"][aria-selected="true"]')
+      ?.textContent?.startsWith('SCALE'),
+    true,
+  );
+  await space('sc');
+  await submit('CANCEL');
   await act(async () => root.unmount());
   console.log(
     'CAD UI checks passed: full app mode isolation, prompts, native drawing, draft paths, invalid input recovery, modifications, undo/redo, cancellation, extents, collapse and floating.',

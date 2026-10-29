@@ -50,7 +50,12 @@ LINE
 - LINE/PLINE: continue adding points; `Undo` removes the last pending point;
   `Close` closes the path. Enter finishes an open path. Escape/CANCEL discards
   the incomplete path. Each completed command is one shared undo operation.
-- Up/Down recalls submitted inputs; Tab cycles matching commands. HELP lists only
+- Space submits the current command or parameter just like Enter, including finishing
+  an open path. This applies only to CAD command input, not other application fields.
+- Typing command initials opens a selectable suggestion list showing full command
+  names, aliases and help. Click a row or use Up/Down and Enter/Space; exact aliases
+  take priority, and partial names accept the first match. Tab cycles completions.
+  Up/Down recalls submitted inputs when no suggestions are open. HELP lists only
   implemented commands, aliases and parameter conventions. Clear clears output.
 - F3 toggles OSNAP, F7 grid, F8 ortho, F10 45° polar tracking while CAD is ON.
   Function keys leave other text inputs alone. Existing Ctrl+Z/Y work outside
@@ -66,8 +71,8 @@ LINE
 | Category | Commands / aliases |
 | --- | --- |
 | Drawing | LINE/L, PLINE/PL, RECTANGLE/REC, CIRCLE/C, ELLIPSE/EL, POLYGON/POL, ARC, POINT/PO |
-| Modification | MOVE/M, COPY/CO, ROTATE/RO, SCALE/SC, MIRROR/MI, ERASE/E, BOUNDARY/BO |
-| Selection / measurement | SELECT (ALL, NONE, ID or WINDOW + corners), LIST, AREA, DIST, ID |
+| Modification | MOVE/M, COPY/CO, ROTATE/RO, SCALE/SC, STRETCH/S, MIRROR/MI, ERASE/E, BOUNDARY/BO |
+| Selection / measurement | SELECT (ALL, NONE, ID or WINDOW + corners), LIST, AREA, DIST, ID, DIM (DIMLINEAR/DLI), DIMALIGNED/DAL |
 | View / precision | ZOOM/Z, PAN (drawing-space displacement), GRID, GRIDSPACING, OSNAP, ORTHO, SNAP, POLAR, UNITS |
 | Project / utility | UNDO/U, REDO, REGEN, SAVE, OPEN, HELP, CANCEL/ESC |
 
@@ -78,6 +83,28 @@ segments per revolution. MIRROR retains originals and creates polygonal copies
 (curves are tessellated); MOVE/COPY/ROTATE/SCALE preserve analytic primitives.
 AREA reports each selected component's area and approximate outline perimeter,
 not the boolean union of the selection.
+
+## Stretch and dimension workflow
+
+- **STRETCH / S:** enter two crossing-window corners, a base point, then the
+  destination (or a relative displacement from the base). Vertices inside the
+  window move; vertices outside stay put. Fully enclosed objects translate.
+  Partially stretched rectangles/triangles become editable custom-shape polygons.
+  Partial stretching supports solid polygonal sections and draft line/polyline
+  vertices. Curves, hollow sections and arcs must be fully enclosed to translate;
+  associated components still require the existing component tools. Empty windows,
+  zero displacement and self-crossing results fail without changing the project.
+- **SCALE / SC:** select objects, specify a base point and a positive factor.
+- **DIM / DIMLINEAR / DLI:** two extension origins, then the dimension-line
+  location. Placement chooses horizontal or vertical measurement.
+- **DIMALIGNED / DAL:** the same prompts, measuring true distance along the segment.
+- Dimensions show extension lines, a dimension line, end ticks and a measured label,
+  with a live placement preview. They are selectable/draggable, support shared
+  undo/redo and transforms, and persist in JSON/database saves. DXF exports their
+  visible line/text primitives on the DIMENSIONS layer, not editable native DXF
+  DIMENSION records. They are **non-associative** annotations: moving a separately
+  dimensioned object does not automatically move its dimension origins. They never
+  contribute engineering area or stiffness or appear in MIDAS boundaries/reports.
 
 ## Data and engineering safety
 
@@ -100,7 +127,7 @@ not the boolean union of the selection.
 
 ## Deliberately deferred
 
-SPLINE, HATCH, OFFSET, TRIM, EXTEND, FILLET, CHAMFER, STRETCH, ARRAY, JOIN, EXPLODE,
+SPLINE, HATCH, OFFSET, TRIM, EXTEND, FILLET, CHAMFER, ARRAY, JOIN, EXPLODE,
 LENGTHEN, BREAK, PEDIT, ALIGN and command-based PROPERTIES are **not advertised or
 registered**. They return the unknown-command message rather than pretend to work.
 Original section-editing tools remain available. This is a tested initial command
@@ -112,6 +139,7 @@ set, not completion of every advanced operation in the enhancement roadmap.
   three-point arcs, immutable transformations and geometric validation.
 - `src/components/CadCommands.tsx`: command sessions, project/view adapters,
   sequential prompts, history/autocomplete, shortcut strip and resizable panel.
+- `src/components/CadDimension.tsx`: shared linear/aligned annotation rendering.
 - `src/components/Canvas.tsx`: optional mouse point interception, cached snap
   geometry, previews and drafting path selection/dragging.
 - `src/app/page.tsx`, `src/components/Toolbar.tsx`: optional mode and layout restoration.

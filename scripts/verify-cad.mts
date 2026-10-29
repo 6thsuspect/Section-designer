@@ -12,6 +12,8 @@ import {
   transformCadSelection,
   cadAllPoints,
   draftInRect,
+  stretchCad,
+  dimensionGeometry,
 } from '../src/engine/cad.ts';
 import { computeSectionProperties, computeComponentProps } from '../src/engine/geometry.ts';
 import { exportJSON, validateAndImportJSON, exportDXF } from '../src/engine/exporters.ts';
@@ -237,6 +239,120 @@ assert.deepEqual(visibleViewportBounds(view, 1200, 600), { x: -800, y: -400, w: 
 assert.deepEqual(visibleViewportBounds(view, 600, 1200), { x: -400, y: -800, w: 800, h: 1600 });
 assert.deepEqual(visibleViewportBounds(view, 800, 800), view);
 assert.deepEqual(visibleViewportBounds(view, 0, 0), view);
-assert.deepEqual(visibleViewportBounds({ x: 1000, y: -250, w: 200, h: 100 }, 1200, 600), { x: 1000, y: -250, w: 200, h: 100 });
+assert.deepEqual(visibleViewportBounds({ x: 1000, y: -250, w: 200, h: 100 }, 1200, 600), {
+  x: 1000,
+  y: -250,
+  w: 200,
+  h: 100,
+});
 assert.deepEqual(view, { x: -400, y: -400, w: 800, h: 800 });
-console.log('Full-canvas grid bounds checks passed (wide, tall, square, resized and panned viewports).');
+console.log(
+  'Full-canvas grid bounds checks passed (wide, tall, square, resized and panned viewports).',
+);
+
+assert.equal(findCadCommand('s')?.name, 'STRETCH');
+assert.equal(findCadCommand('sc')?.name, 'SCALE');
+assert.equal(findCadCommand('dim')?.name, 'DIM');
+assert.equal(findCadCommand('dal')?.name, 'DIMALIGNED');
+const stretchRect = cadCreate(p, 'RECTANGLE', [
+  { x: 0, y: 0 },
+  { x: 100, y: 50 },
+]);
+const stretchedRect = stretchCad(stretchRect, [
+  { x: 90, y: -10 },
+  { x: 110, y: 60 },
+  { x: 0, y: 0 },
+  { x: 50, y: 0 },
+]);
+near(computeSectionProperties(stretchedRect.components).props.area, 7500);
+near(computeSectionProperties(stretchRect.components).props.area, 5000);
+assert.equal(stretchedRect.components[0].id, stretchRect.components[0].id);
+const stretchedLine = stretchCad(
+  cadCreate(p, 'LINE', [
+    { x: 0, y: 0 },
+    { x: 100, y: 0 },
+  ]),
+  [
+    { x: 99, y: -1 },
+    { x: 101, y: 1 },
+    { x: 0, y: 0 },
+    { x: 20, y: 10 },
+  ],
+);
+equalPoint(stretchedLine.drawingEntities![0].points[1], { x: 120, y: 10 });
+assert.throws(
+  () =>
+    stretchCad(stretchRect, [
+      { x: 999, y: 999 },
+      { x: 1000, y: 1000 },
+      { x: 0, y: 0 },
+      { x: 1, y: 0 },
+    ]),
+  /No unlocked/,
+);
+assert.throws(
+  () =>
+    stretchCad(circle, [
+      { x: 0, y: 0 },
+      { x: 31, y: 31 },
+      { x: 0, y: 0 },
+      { x: 2, y: 0 },
+    ]),
+  /Partial STRETCH/,
+);
+const dimHorizontal = cadCreate(p, 'DIM', [
+  { x: 0, y: 0 },
+  { x: 30, y: 40 },
+  { x: 15, y: 100 },
+]);
+const dimVertical = cadCreate(p, 'DIM', [
+  { x: 0, y: 0 },
+  { x: 30, y: 40 },
+  { x: 100, y: 20 },
+]);
+const dimAligned = cadCreate(p, 'DIMALIGNED', [
+  { x: 0, y: 0 },
+  { x: 30, y: 40 },
+  { x: 0, y: 100 },
+]);
+near(dimensionGeometry(dimHorizontal.drawingEntities![0]).measurement, 30);
+near(dimensionGeometry(dimVertical.drawingEntities![0]).measurement, 40);
+near(dimensionGeometry(dimAligned.drawingEntities![0]).measurement, 50);
+assert.equal(dimAligned.components.length, 0);
+assert.throws(
+  () =>
+    cadCreate(p, 'DIM', [
+      { x: 0, y: 0 },
+      { x: 0, y: 0 },
+      { x: 0, y: 10 },
+    ]),
+  /distinct/,
+);
+const dimRotated = transformCadSelection(
+  dimHorizontal,
+  [dimHorizontal.drawingEntities![0].id],
+  'ROTATE',
+  [{ x: 0, y: 0 }, 90],
+);
+near(dimensionGeometry(dimRotated.drawingEntities![0]).measurement, 30);
+const dimScaled = transformCadSelection(dimAligned, [dimAligned.drawingEntities![0].id], 'SCALE', [
+  { x: 0, y: 0 },
+  2,
+]);
+near(dimensionGeometry(dimScaled.drawingEntities![0]).measurement, 100);
+assert.ok(validateAndImportJSON(exportJSON(dimAligned)).success);
+assert.deepEqual(
+  validateAndImportJSON(exportJSON(dimHorizontal)).project?.drawingEntities,
+  dimHorizontal.drawingEntities,
+);
+assert.ok(exportDXF(dimAligned, computeSectionProperties([]).props).includes('DIMENSIONS'));
+assert.equal(
+  validateAndImportJSON(
+    exportJSON({
+      ...dimHorizontal,
+      drawingEntities: [{ ...dimHorizontal.drawingEntities![0], dimensionAxis: { x: 0, y: 0 } }],
+    }),
+  ).success,
+  false,
+);
+console.log('STRETCH, SCALE/SC and linear/aligned dimension checks passed.');

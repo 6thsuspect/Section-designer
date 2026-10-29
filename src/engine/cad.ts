@@ -4,7 +4,9 @@ import { componentRegion, keyholeAll, signedArea } from './combine';
 
 export interface DrawingEntity {
   id: string;
-  kind: 'line' | 'polyline' | 'arc' | 'point';
+  kind: 'line' | 'polyline' | 'arc' | 'point' | 'dimension';
+  dimensionStyle?: 'linear' | 'aligned';
+  dimensionAxis?: Point;
   points: Point[];
 }
 export interface CadCommand {
@@ -77,6 +79,32 @@ export const CAD_COMMANDS: CadCommand[] = [
     'Draft point (not included in section properties).',
     ['Specify point:'],
     ['point'],
+  ),
+  command(
+    'STRETCH',
+    'S',
+    'Crossing window selects vertices; specify base and destination. Partial stretch supports solid polygonal components and draft paths; fully enclosed objects move.',
+    [
+      'First crossing-window corner:',
+      'Opposite crossing-window corner:',
+      'Base point:',
+      'Destination point:',
+    ],
+    ['point', 'point', 'point', 'point'],
+  ),
+  command(
+    'DIM',
+    'DIMLINEAR DLI',
+    'Linear dimension: two extension origins, then location (horizontal or vertical selected by location).',
+    ['First extension origin:', 'Second extension origin:', 'Dimension line location:'],
+    ['point', 'point', 'point'],
+  ),
+  command(
+    'DIMALIGNED',
+    'DAL',
+    'Aligned dimension: two extension origins, then dimension line location.',
+    ['First extension origin:', 'Second extension origin:', 'Dimension line location:'],
+    ['point', 'point', 'point'],
   ),
   command(
     'MOVE',
@@ -303,7 +331,9 @@ export function cadCreate(
     b = v[1] as Point;
   let comp: SectionComponent | undefined, draft: DrawingEntity | undefined;
   const base = sectionShape(project, name, []);
-  if (name === 'RECTANGLE') {
+  if (name === 'DIM' || name === 'DIMALIGNED') {
+    draft = makeCadDimension(name, a, b, v[2] as Point, id());
+  } else if (name === 'RECTANGLE') {
     const w = Math.abs(b.x - a.x),
       h = Math.abs(b.y - a.y);
     if (!w || !h) throw new Error('Rectangle width and height must be non-zero.');
@@ -471,7 +501,17 @@ export function transformCadSelection(
     ...e,
     id: copy ? id() : e.id,
     points: e.points.map(map),
+    ...(e.dimensionAxis ? { dimensionAxis: mappedAxis(e.dimensionAxis, a, map) } : {}),
   }));
+  if (
+    drafts.some(
+      (e) =>
+        e.kind === 'dimension' &&
+        (!Number.isFinite(dimensionGeometry(e).measurement) ||
+          dimensionGeometry(e).measurement < 1e-10),
+    )
+  )
+    throw new Error('Transformation would collapse a dimension.');
   const finite = (p: Point) =>
     Number.isFinite(p.x) && Number.isFinite(p.y) && Math.abs(p.x) <= 1e12 && Math.abs(p.y) <= 1e12;
   if (
@@ -500,7 +540,7 @@ export const componentWorldRings = (c: SectionComponent) => componentRegion(c).f
 export function cadAllPoints(project: SectionProject): Point[] {
   return [
     ...project.components.filter((c) => c.visible).flatMap((c) => computeComponentProps(c).outline),
-    ...(project.drawingEntities ?? []).flatMap((e) => e.points),
+    ...(project.drawingEntities ?? []).flatMap(drawingEntityPoints),
   ];
 }
 
@@ -510,6 +550,12 @@ export function draftInRect(
   rect: { x0: number; y0: number; x1: number; y1: number },
   crossing = false,
 ): boolean {
+  if (entity.kind === 'dimension') {
+    const segments = dimensionGeometry(entity).segments;
+    return crossing
+      ? segments.some((points) => draftInRect({ id: entity.id, kind: 'line', points }, rect, true))
+      : segments.flat().every((p) => pointInRect(p, rect.x0, rect.y0, rect.x1, rect.y1));
+  }
   const { x0, y0, x1, y1 } = rect;
   const inside = (p: Point) => pointInRect(p, x0, y0, x1, y1);
   if (!crossing) return entity.points.every(inside);
@@ -525,4 +571,152 @@ export function draftInRect(
       i > 0 &&
       corners.some((a, j) => segmentsIntersect(entity.points[i - 1], p, a, corners[(j + 1) % 4])),
   );
+}
+
+function mappedAxis(axis: Point, origin: Point, map: (p: Point) => Point): Point {
+  const a = map(origin),
+    b = map({ x: origin.x + axis.x, y: origin.y + axis.y });
+  const length = Math.hypot(b.x - a.x, b.y - a.y);
+  return { x: (b.x - a.x) / length, y: (b.y - a.y) / length };
+}
+
+/** Non-associative dimension geometry, shared by canvas and DXF export. */
+export function dimensionGeometry(entity: DrawingEntity, tick = 3) {
+  const [a, b, location] = entity.points;
+  const length = Math.hypot(b.x - a.x, b.y - a.y);
+  const axis =
+    entity.dimensionStyle === 'linear'
+      ? (entity.dimensionAxis ?? { x: 1, y: 0 })
+      : { x: (b.x - a.x) / (length || 1), y: (b.y - a.y) / (length || 1) };
+  const normal = { x: -axis.y, y: axis.x };
+  const project = (p: Point) => {
+    const distance = (location.x - p.x) * normal.x + (location.y - p.y) * normal.y;
+    return { x: p.x + normal.x * distance, y: p.y + normal.y * distance };
+  };
+  const start = project(a),
+    end = project(b);
+  const segments: [Point, Point][] = [
+    [a, start],
+    [b, end],
+    [start, end],
+  ];
+  for (const p of [start, end])
+    segments.push([
+      { x: p.x - (axis.x + normal.x) * tick, y: p.y - (axis.y + normal.y) * tick },
+      { x: p.x + (axis.x + normal.x) * tick, y: p.y + (axis.y + normal.y) * tick },
+    ]);
+  const measurement = Math.abs((b.x - a.x) * axis.x + (b.y - a.y) * axis.y);
+  return {
+    segments,
+    measurement,
+    angle: (Math.atan2(axis.y, axis.x) * 180) / Math.PI,
+    label: String(Number(measurement.toPrecision(10))),
+    text: { x: (start.x + end.x) / 2, y: (start.y + end.y) / 2 },
+  };
+}
+
+export function stretchCad(project: SectionProject, values: CadValue[]): SectionProject {
+  const [a, b, base, destination] = values as Point[];
+  const inside = (p: Point) => pointInRect(p, a.x, a.y, b.x, b.y);
+  const dx = destination.x - base.x,
+    dy = destination.y - base.y;
+  if (!dx && !dy) throw new Error('Stretch displacement must be non-zero.');
+  const move = (p: Point) => ({ x: p.x + dx, y: p.y + dy });
+  let count = 0;
+  const components = project.components.map((c) => {
+    if (!c.visible || c.locked) return c;
+    const rings = componentWorldRings(c),
+      points = rings.flat();
+    if (!points.some(inside)) return c;
+    if (c.combinedFrom || c.parentId || c.geometry.boltDeductions)
+      throw new Error('Use existing tools for associated or combined components.');
+    count++;
+    if (points.every(inside)) return { ...c, position: move(c.position) };
+    if (
+      !['rectangle', 'triangle', 'polygon', 'custom-shape'].includes(c.type) ||
+      rings.length !== 1
+    )
+      throw new Error(
+        'Partial STRETCH supports solid polygonal components only; enclose curved/hollow objects fully to move them.',
+      );
+    const stretched = rings[0].map((p) => (inside(p) ? move(p) : p));
+    const validated = cadCreate(
+      { ...project, components: [], drawingEntities: [] },
+      'PLINE',
+      stretched,
+      true,
+    ).components[0];
+    return {
+      ...validated,
+      id: c.id,
+      name: c.name,
+      operation: c.operation,
+      materialId: c.materialId,
+    };
+  });
+  const drawingEntities = project.drawingEntities?.map((entity) => {
+    if (!entity.points.some(inside)) return entity;
+    if (entity.kind === 'arc' && !entity.points.every(inside))
+      throw new Error('Partially stretching an arc is not supported; enclose it fully to move.');
+    count++;
+    return { ...entity, points: entity.points.map((p) => (inside(p) ? move(p) : p)) };
+  });
+  if (
+    drawingEntities?.some((e) => e.kind === 'dimension' && dimensionGeometry(e).measurement < 1e-10)
+  )
+    throw new Error('Stretch would collapse a dimension.');
+  if (!count) throw new Error('No unlocked vertices inside the crossing window.');
+  if (
+    components.some(
+      (c) =>
+        !Number.isFinite(c.position.x) ||
+        !Number.isFinite(c.position.y) ||
+        computeComponentProps(c).outline.some(
+          (p) =>
+            !Number.isFinite(p.x) ||
+            !Number.isFinite(p.y) ||
+            Math.abs(p.x) > 1e12 ||
+            Math.abs(p.y) > 1e12,
+        ),
+    ) ||
+    drawingEntities?.some((e) =>
+      e.points.some(
+        (p) =>
+          !Number.isFinite(p.x) ||
+          !Number.isFinite(p.y) ||
+          Math.abs(p.x) > 1e12 ||
+          Math.abs(p.y) > 1e12,
+      ),
+    )
+  )
+    throw new Error('Stretch exceeds the supported coordinate range.');
+  return { ...project, components, drawingEntities };
+}
+
+export function makeCadDimension(
+  name: string,
+  a: Point,
+  b: Point,
+  location: Point,
+  entityId = 'preview',
+): DrawingEntity {
+  if (a.x === b.x && a.y === b.y) throw new Error('Dimension origins must be distinct.');
+  const horizontal =
+    Math.abs(location.y - (a.y + b.y) / 2) >= Math.abs(location.x - (a.x + b.x) / 2);
+  const entity: DrawingEntity = {
+    id: entityId,
+    kind: 'dimension',
+    points: [a, b, location],
+    dimensionStyle: name === 'DIM' ? 'linear' : 'aligned',
+    ...(name === 'DIM' ? { dimensionAxis: horizontal ? { x: 1, y: 0 } : { x: 0, y: 1 } } : {}),
+  };
+  if (dimensionGeometry(entity).measurement < 1e-10)
+    throw new Error(
+      'The selected linear direction has zero length; choose another location or use DAL.',
+    );
+  return entity;
+}
+
+export function drawingEntityPoints(entity: DrawingEntity): Point[] {
+  return entity.kind === 'dimension' ? dimensionGeometry(entity).segments.flat() : entity.points;
 }

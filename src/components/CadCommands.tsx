@@ -11,6 +11,9 @@ import {
   transformCadSelection,
   cadAllPoints,
   arcPoints,
+  stretchCad,
+  makeCadDimension,
+  dimensionGeometry,
   type CadSession,
   type CadValue,
 } from '@/engine/cad';
@@ -65,9 +68,21 @@ export function useCad(options: CadOptions) {
     const point = values[0] as Point;
     const drafts = p.drawingEntities ?? [];
     if (
-      ['LINE', 'PLINE', 'RECTANGLE', 'CIRCLE', 'ELLIPSE', 'POLYGON', 'ARC', 'POINT'].includes(name)
+      [
+        'LINE',
+        'PLINE',
+        'RECTANGLE',
+        'CIRCLE',
+        'ELLIPSE',
+        'POLYGON',
+        'ARC',
+        'POINT',
+        'DIM',
+        'DIMALIGNED',
+      ].includes(name)
     )
       commit(cadCreate(p, name, values, close));
+    else if (name === 'STRETCH') commit(stretchCad(p, values));
     else if (['MOVE', 'COPY', 'ROTATE', 'SCALE', 'MIRROR'].includes(name))
       commit(transformCadSelection(p, s.selectedIds, name, values));
     else if (name === 'UNDO') s.undo();
@@ -175,7 +190,9 @@ export function useCad(options: CadOptions) {
       });
       selected.forEach((e) =>
         log(
-          `${e.kind} [${e.id}] ${e.points.length} vertices; drafting geometry, no section area.`,
+          e.kind === 'dimension'
+            ? `${e.dimensionStyle} dimension [${e.id}]: ${dimensionGeometry(e).label} ${p.units}; non-associative annotation, no section area.`
+            : `${e.kind} [${e.id}] ${e.points.length} vertices; drafting geometry, no section area.`,
           'success',
         ),
       );
@@ -394,7 +411,26 @@ export function useCad(options: CadOptions) {
       }
     } else preview = [...preview, hover];
   }
+  let dimensionPreview = null;
+  if (
+    session &&
+    ['DIM', 'DIMALIGNED'].includes(session.command.name) &&
+    session.values.length === 2 &&
+    hover
+  ) {
+    try {
+      dimensionPreview = makeCadDimension(
+        session.command.name,
+        session.values[0] as Point,
+        session.values[1] as Point,
+        hover,
+      );
+    } catch {
+      /* Keep prompting until the dimension direction is valid. */
+    }
+  }
   return {
+    dimensionPreview,
     session,
     history,
     setHistory,
@@ -439,6 +475,7 @@ export function CadPanel({ cad, options }: { cad: CadApi; options: CadOptions })
     [index, setIndex] = useState(-1),
     [suggestion, setSuggestion] = useState(0);
   const completion = useRef<string[]>([]);
+  const [activeSuggestion, setActiveSuggestion] = useState(-1);
   const historyRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
     historyRef.current?.scrollTo(0, historyRef.current.scrollHeight);
@@ -449,6 +486,10 @@ export function CadPanel({ cad, options }: { cad: CadApi; options: CadOptions })
           (c) =>
             c.name.startsWith(text.toUpperCase()) ||
             c.aliases.some((a) => a.startsWith(text.toUpperCase())),
+        ).sort(
+          (a, b) =>
+            Number(b.name === text.toUpperCase() || b.aliases.includes(text.toUpperCase())) -
+            Number(a.name === text.toUpperCase() || a.aliases.includes(text.toUpperCase())),
         )
       : [];
   const colors: Record<string, string> = {
@@ -476,6 +517,9 @@ export function CadPanel({ cad, options }: { cad: CadApi; options: CadOptions })
           'COPY',
           'ROTATE',
           'SCALE',
+          'STRETCH',
+          'DIM',
+          'DIMALIGNED',
           'ERASE',
           'UNDO',
           'REDO',
@@ -596,18 +640,64 @@ export function CadPanel({ cad, options }: { cad: CadApi; options: CadOptions })
               ))}
             </div>
             <form
-              className="border-t px-2 py-1"
+              className="relative border-t px-2 py-1"
               style={{ borderColor: 'var(--border)' }}
               onSubmit={(e) => {
                 e.preventDefault();
                 if (text) setEntered((h) => [...h.slice(-99), text]);
-                cad.submit(text);
+                const chosen = !activeSession
+                  ? activeSuggestion >= 0
+                    ? (suggestions[activeSuggestion]?.name ?? text)
+                    : (findCadCommand(text)?.name ?? suggestions[0]?.name ?? text)
+                  : text;
+                cad.submit(chosen);
+                setActiveSuggestion(-1);
                 setText('');
                 setIndex(-1);
                 setSuggestion(0);
                 completion.current = [];
               }}
             >
+              {suggestions.length > 0 && (
+                <div
+                  id="cad-command-suggestions"
+                  role="listbox"
+                  aria-label="Command suggestions"
+                  className="absolute bottom-full left-2 right-2 max-h-56 overflow-auto rounded border shadow-xl z-50 py-1"
+                  style={{ background: 'var(--bg-secondary)', borderColor: 'var(--border)' }}
+                >
+                  {suggestions.map((command, i) => (
+                    <button
+                      type="button"
+                      role="option"
+                      id={`cad-suggestion-${i}`}
+                      aria-selected={i === Math.max(0, activeSuggestion)}
+                      key={command.name}
+                      className="w-full px-3 py-1.5 text-left flex flex-col gap-0.5"
+                      style={{
+                        background:
+                          i === Math.max(0, activeSuggestion) ? 'var(--bg-tertiary)' : undefined,
+                      }}
+                      onMouseDown={(e) => e.preventDefault()}
+                      onMouseEnter={() => setActiveSuggestion(i)}
+                      onClick={() => {
+                        cad.run(command.name);
+                        setText('');
+                        setActiveSuggestion(-1);
+                        completion.current = [];
+                      }}
+                    >
+                      <span className="font-semibold">
+                        {command.name}
+                        {command.aliases.length ? ` (${command.aliases.join(', ')})` : ''}
+                      </span>
+                      <span className="text-[10px]" style={{ color: 'var(--text-muted)' }}>
+                        {command.help}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              )}
               <label className="block text-[10px]" htmlFor="cad-command-input">
                 {activeSession ? cadPrompt(activeSession) : 'Command:'}
               </label>
@@ -616,6 +706,13 @@ export function CadPanel({ cad, options }: { cad: CadApi; options: CadOptions })
                 ref={inputRef}
                 value={text}
                 autoComplete="off"
+                role="combobox"
+                aria-autocomplete="list"
+                aria-expanded={suggestions.length > 0}
+                aria-controls="cad-command-suggestions"
+                aria-activedescendant={
+                  suggestions.length ? `cad-suggestion-${Math.max(0, activeSuggestion)}` : undefined
+                }
                 spellCheck={false}
                 className="w-full bg-transparent outline-none"
                 placeholder={
@@ -626,9 +723,32 @@ export function CadPanel({ cad, options }: { cad: CadApi; options: CadOptions })
                 onChange={(e) => {
                   setText(e.target.value);
                   setSuggestion(0);
+                  setActiveSuggestion(-1);
                   completion.current = [];
                 }}
                 onKeyDown={(e) => {
+                  if (e.nativeEvent.isComposing) return;
+                  if (
+                    (e.key === ' ' || e.code === 'Space') &&
+                    !e.ctrlKey &&
+                    !e.metaKey &&
+                    !e.altKey
+                  ) {
+                    e.preventDefault();
+                    e.currentTarget.form?.requestSubmit();
+                    return;
+                  }
+                  if (suggestions.length && (e.key === 'ArrowUp' || e.key === 'ArrowDown')) {
+                    e.preventDefault();
+                    setActiveSuggestion((i) =>
+                      e.key === 'ArrowDown'
+                        ? (i + 1) % suggestions.length
+                        : i <= 0
+                          ? suggestions.length - 1
+                          : i - 1,
+                    );
+                    return;
+                  }
                   if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
                     e.preventDefault();
                     const next =
@@ -644,6 +764,7 @@ export function CadPanel({ cad, options }: { cad: CadApi; options: CadOptions })
                       completion.current = suggestions.map((c) => c.name);
                     setText(completion.current[suggestion % completion.current.length]);
                     setSuggestion(suggestion + 1);
+                    setActiveSuggestion(-1);
                   }
                   if (e.key === 'Escape') {
                     e.preventDefault();
