@@ -6,6 +6,7 @@ import Toolbar from '@/components/Toolbar';
 import ComponentsPanel from '@/components/ComponentsPanel';
 import PropertiesPanel from '@/components/PropertiesPanel';
 import Canvas from '@/components/Canvas';
+import { useCad, CadPanel } from '@/components/CadCommands';
 import BottomPanel from '@/components/BottomPanel';
 import SaveLoadDialog from '@/components/SaveLoadDialog';
 import SettingsDialog, { type AppSettings } from '@/components/SettingsDialog';
@@ -13,6 +14,7 @@ import CustomShapeDialog from '@/components/CustomShapeDialog';
 import AboutDialog from '@/components/AboutDialog';
 import ImportDialog from '@/components/ImportDialog';
 import { downloadJSON, downloadCSV, exportPDF, exportDetailedPDF, downloadDXF, downloadMCT, exportExcel } from '@/engine/exporters';
+import { cadAllPoints } from '@/engine/cad';
 import { computeSectionProperties } from '@/engine/geometry';
 import type { Point, SectionProject, SectionComponent } from '@/engine/types';
 import { DEFAULT_CANVAS_THEME, normalizeCanvasThemeSettings, resolveCanvasPalette } from '@/engine/canvasTheme';
@@ -226,6 +228,14 @@ export default function Home() {
 
   // Fit view to content
   const fitView = useCallback(() => {
+    if (store.project.drawingEntities?.length) {
+      const points = cadAllPoints(store.project);
+      let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+      points.forEach(p => { minX = Math.min(minX, p.x); maxX = Math.max(maxX, p.x); minY = Math.min(minY, p.y); maxY = Math.max(maxY, p.y); });
+      const size = Math.max(maxX - minX, maxY - minY, 1) * 1.25;
+      setViewBox({ x: (minX + maxX - size) / 2, y: (-minY - maxY - size) / 2, w: size, h: size });
+      return;
+    }
     if (!store.properties || store.project.components.length === 0) {
       setViewBox({ x: -400, y: -400, w: 800, h: 800 });
       return;
@@ -237,7 +247,7 @@ export default function Home() {
     const halfH = Math.max(Math.abs(p.yMax), Math.abs(p.yMin), 100) * 1.5;
     const size = Math.max(halfW, halfH) * 2;
     setViewBox({ x: cx - size / 2, y: -cy - size / 2, w: size, h: size });
-  }, [store.properties, store.project.components.length]);
+  }, [store.properties, store.project]);
 
   // Export handlers
   const handleExportJSON = useCallback(() => {
@@ -326,9 +336,24 @@ export default function Home() {
     });
   }, []);
 
+  const [cadEnabled, setCadEnabled] = useState(false);
+  const originalCadView = useRef<{ view: typeof viewBox; grid: boolean; osnap: boolean } | null>(null);
+  const cadOptions = { enabled: cadEnabled, store, view: viewBox, setView: setViewBox, grid: showGrid, setGrid: setShowGrid, osnap, setOsnap, save: () => setDialogMode('save'), open: () => setDialogMode('load') };
+  const cad = useCad(cadOptions);
+  const toggleCad = () => {
+    if (!cadEnabled) originalCadView.current = { view: viewBox, grid: showGrid, osnap };
+    else {
+      cad.cancel();
+      const original = originalCadView.current;
+      if (original) { setViewBox(original.view); setShowGrid(original.grid); setOsnap(original.osnap); }
+    }
+    setCadEnabled(v => !v);
+  };
+
   // Keyboard shortcuts
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
+      if (e.defaultPrevented || (e.target instanceof Element && e.target.closest('[data-cad-ui]'))) return;
       if (e.key === 'F3' && e.shiftKey) {
         // Shift+F3: OSNAP dimensions / labels (snapping unchanged)
         e.preventDefault();
@@ -484,6 +509,8 @@ export default function Home() {
       {/* Toolbar */}
       <Toolbar
         store={store}
+        cadEnabled={cadEnabled}
+        onToggleCad={toggleCad}
         onSave={() => setDialogMode('save')}
         onLoad={() => setDialogMode('load')}
         onExportJSON={handleExportJSON}
@@ -503,7 +530,7 @@ export default function Home() {
         onFitView={fitView}
         onOpenSettings={() => setShowSettings(true)}
         onOpenAbout={() => setShowAbout(true)}
-        hasSection={hasSection}
+        hasSection={hasSection || !!store.project.drawingEntities?.length}
         theme={settings.theme}
         onToggleTheme={toggleTheme}
       />
@@ -566,13 +593,16 @@ export default function Home() {
               setViewBox={setViewBox}
               dimensionFontScale={settings.dimensionFontScale}
               palette={canvasPalette}
+              cad={cadEnabled ? cad : undefined}
             />
           </div>
+
+          {cadEnabled && <CadPanel cad={cad} options={cadOptions} />}
 
           {renderDockSide('bottom')}
 
           {/* Bottom panel resize handle */}
-          {!bottomCollapsed && (
+          {!cadEnabled && !bottomCollapsed && (
             <div
               className="panel-resizer panel-resizer-h"
               onPointerDown={e => beginResize(e, 'y', bottomHeight, setBottomHeight, BOTTOM_MIN, bottomMax, true)}
@@ -581,12 +611,12 @@ export default function Home() {
           )}
 
           {/* Bottom Panel */}
-          <BottomPanel
+          <div className={cadEnabled ? 'hidden' : 'contents'}><BottomPanel
             store={store}
             collapsed={bottomCollapsed}
             onToggle={() => setBottomCollapsed(!bottomCollapsed)}
             height={bottomHeight}
-          />
+          /></div>
         </div>
 
         {renderDockSide('right')}

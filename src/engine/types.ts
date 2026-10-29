@@ -210,6 +210,8 @@ export interface CalcTrace {
 }
 
 export interface SectionProject {
+  /** Non-structural CAD paths; excluded from section area/stiffness calculations. */
+  drawingEntities?: import('./cad').DrawingEntity[];
   /** MIDAS section ID; older projects default to 1. */
   sectionNumber?: number;
   id: string;

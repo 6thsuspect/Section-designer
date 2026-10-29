@@ -1,0 +1,134 @@
+# Optional AutoCAD-style drawing mode
+
+Use **AutoCAD Mode ON/OFF** in the top toolbar. It is **OFF on startup**; this is an
+AutoCAD-inspired interface, not an Autodesk product or an AutoCAD file interpreter.
+
+## Isolation and layout
+
+- ON reveals a shortcut strip and command window immediately below the canvas.
+  The existing results panel is hidden (not unmounted) to reclaim drawing space.
+- OFF cancels incomplete input, removes all CAD UI/shortcuts, restores the previous
+  viewport/grid/OSNAP state, and reveals the original results panel at its prior size.
+  Completed geometry is never deleted by a mode change.
+- Drag the command window's top edge to resize, or focus the separator and use
+  Up/Down. Use **−/+** to collapse/expand and **Float/Dock** to move it between the
+  canvas bottom and a floating lower-right window. Free dragging to arbitrary
+  positions is not implemented. History is scrollable, color-coded and bounded.
+- The existing SVG viewport has no drawing-sheet edge. Wheel zoom is cursor-anchored;
+  middle-button or Shift+left drag pans. Fit includes both section and draft geometry.
+  CAD `ZOOM` also provides Extents, In, Out and Reset. Coordinate entry is guarded
+  to ±1e12 for numerical safety; wheel zoom retains the existing precision guards.
+
+## Command workflow
+
+Enter a command or alias, then answer the displayed prompts one at a time. Examples:
+
+```text
+REC
+0,0
+100,50
+
+CIRCLE
+50,50
+25
+
+LINE
+0,0
+@100<45
+@50,0
+[Enter to finish]
+```
+
+- Coordinates: absolute `x,y`, planar `x,y,0`, relative `@dx,dy`, polar `@distance<angle`.
+  X points right, Y up, angles are counterclockwise degrees. Nonzero Z is rejected.
+- Lengths default to project units. Explicit `mm`, `cm`, `m`, `inch`/`in`, `ft` suffixes
+  are converted, e.g. `@1m,25mm`. Angles/counts/scale factors reject length suffixes.
+- While a point is requested, click the canvas or type a coordinate. Circle/polygon
+  radius and ellipse semi-axes can also be picked on the canvas. Previews do not
+  mutate the project. ORTHO/POLAR/grid SNAP constrain **mouse** input; explicit
+  typed coordinates are authoritative.
+- LINE/PLINE: continue adding points; `Undo` removes the last pending point;
+  `Close` closes the path. Enter finishes an open path. Escape/CANCEL discards
+  the incomplete path. Each completed command is one shared undo operation.
+- Up/Down recalls submitted inputs; Tab cycles matching commands. HELP lists only
+  implemented commands, aliases and parameter conventions. Clear clears output.
+- F3 toggles OSNAP, F7 grid, F8 ortho, F10 45° polar tracking while CAD is ON.
+  Function keys leave other text inputs alone. Existing Ctrl+Z/Y work outside
+  text editing; command input retains native text undo. Use UNDO/REDO or the
+  shortcut strip for project history while typing. SAVE/OPEN and Ctrl+S/O in the
+  command window use the existing dialogs.
+- CAD point picking snaps to endpoints/vertices, midpoints, centers and nearest
+  outline edges. GRIDSPACING controls grid and grid-snap spacing. Intersection
+  snaps and configurable polar increments are not included in this increment.
+
+## Implemented commands
+
+| Category | Commands / aliases |
+| --- | --- |
+| Drawing | LINE/L, PLINE/PL, RECTANGLE/REC, CIRCLE/C, ELLIPSE/EL, POLYGON/POL, ARC, POINT/PO |
+| Modification | MOVE/M, COPY/CO, ROTATE/RO, SCALE/SC, MIRROR/MI, ERASE/E, BOUNDARY/BO |
+| Selection / measurement | SELECT (ALL, NONE, ID or WINDOW + corners), LIST, AREA, DIST, ID |
+| View / precision | ZOOM/Z, PAN (drawing-space displacement), GRID, GRIDSPACING, OSNAP, ORTHO, SNAP, POLAR, UNITS |
+| Project / utility | UNDO/U, REDO, REGEN, SAVE, OPEN, HELP, CANCEL/ESC |
+
+ELLIPSE uses a center followed by horizontal and vertical **semi-axis** lengths.
+POLYGON uses side count, center and circumradius; its first vertex is on +X.
+ARC uses start, a point on the arc, then end, and is approximated by up to 256
+segments per revolution. MIRROR retains originals and creates polygonal copies
+(curves are tessellated); MOVE/COPY/ROTATE/SCALE preserve analytic primitives.
+AREA reports each selected component's area and approximate outline perimeter,
+not the boolean union of the selection.
+
+## Data and engineering safety
+
+- Rectangles, circles, ellipses, regular polygons and **closed PLINEs** are ordinary
+  section components: existing mouse editing, properties, boolean operations,
+  JSON, PDF, Excel, CSV, DXF and MIDAS exports apply normally. Self-crossing closed
+  PLINE boundaries are rejected. Existing CG-origin alignment, if enabled,
+  continues to control the section reference frame.
+- Open lines/polylines, arcs and points are **drafting-only** entities in the same
+  project and undo snapshots. They are selectable, draggable, and command-editable,
+  including after mode changes. They contribute **no area or stiffness** and do
+  not appear in engineering reports or MIDAS boundaries. JSON/database saves
+  preserve them; DXF writes them on the DRAFT layer (arcs as polylines).
+- BOUNDARY converts one selected, closed draft path into a section component.
+- Locked components are excluded from modifications. Associated bolt deductions
+  and combined components must use the existing component tools/uncombine first;
+  command modifications fail safely rather than damage parent/child associations.
+- Old projects need no migration: `drawingEntities` is optional. JSON import validates
+  new draft paths and rejects malformed points, unsupported kinds and duplicate IDs.
+
+## Deliberately deferred
+
+SPLINE, HATCH, OFFSET, TRIM, EXTEND, FILLET, CHAMFER, STRETCH, ARRAY, JOIN, EXPLODE,
+LENGTHEN, BREAK, PEDIT, ALIGN and command-based PROPERTIES are **not advertised or
+registered**. They return the unknown-command message rather than pretend to work.
+Original section-editing tools remain available. This is a tested initial command
+set, not completion of every advanced operation in the enhancement roadmap.
+
+## Files and verification
+
+- `src/engine/cad.ts`: registry, coordinate/unit parsing, geometry creation,
+  three-point arcs, immutable transformations and geometric validation.
+- `src/components/CadCommands.tsx`: command sessions, project/view adapters,
+  sequential prompts, history/autocomplete, shortcut strip and resizable panel.
+- `src/components/Canvas.tsx`: optional mouse point interception, cached snap
+  geometry, previews and drafting path selection/dragging.
+- `src/app/page.tsx`, `src/components/Toolbar.tsx`: optional mode and layout restoration.
+- `src/store/useStore.ts`: extend existing single/batch deletion to draft entities.
+- `src/engine/types.ts`, `src/engine/exporters.ts`: optional draft persistence,
+  import validation and DXF output without changing section-property calculations.
+- `scripts/verify-cad.mts`: parsing/math/geometry/export tests.
+- `scripts/verify-cad-ui.tsx`: full application mounted in jsdom; mode isolation,
+  keyboard and mouse input, prompts, validation recovery, drawing, modification,
+  undo/redo, cancellation, fit, collapse, resize and floating controls.
+
+Run `npm run test:cad`, `npm run test:engineering`, `npm run test:midas`, and
+`npm run typecheck`. The production build requires the existing `DATABASE_URL`
+configuration; build-time route collection was checked with a dummy local URL,
+not a live database. jsdom tests exercise DOM behavior, not real-browser rendering
+or a large-drawing frame-rate benchmark.
+
+Targeted lint passes for the new command engine, UI, tests and canvas integration.
+Full-project lint still reports pre-existing hook issues in `SaveLoadDialog.tsx`
+and `useStore.ts`, plus the existing font warning in `layout.tsx`.

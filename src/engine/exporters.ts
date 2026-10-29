@@ -51,6 +51,16 @@ export interface ImportResult {
   warnings?: string[];
 }
 
+function validateDraftingEntities(project: SectionProject): void {
+  if (project.drawingEntities === undefined) return;
+  if (!Array.isArray(project.drawingEntities)) throw new Error('Invalid CAD drawing entities.');
+  const ids = new Set(project.components.map(c => c.id));
+  for (const entity of project.drawingEntities) {
+    if (!entity || typeof entity.id !== 'string' || ids.has(entity.id) || !['line', 'polyline', 'arc', 'point'].includes(entity.kind) || !Array.isArray(entity.points) || entity.points.length < (entity.kind === 'point' ? 1 : 2) || entity.points.some(p => !p || !Number.isFinite(p.x) || !Number.isFinite(p.y))) throw new Error('Invalid CAD path or duplicate object ID.');
+    ids.add(entity.id);
+  }
+}
+
 export function validateAndImportJSON(jsonString: string): ImportResult {
   try {
     const data = JSON.parse(jsonString);
@@ -88,11 +98,13 @@ export function validateAndImportJSON(jsonString: string): ImportResult {
         }
       }
 
+      validateDraftingEntities(project);
       return { success: true, project, warnings: warnings.length > 0 ? warnings : undefined };
     }
 
     // Legacy format (direct project)
     if (data.components && Array.isArray(data.components)) {
+      validateDraftingEntities(data as SectionProject);
       warnings.push('This is a legacy file format. Consider re-exporting in the new format.');
       return { success: true, project: data as SectionProject, warnings };
     }
@@ -267,9 +279,10 @@ export function exportDXF(project: SectionProject, props: SectionProperties): st
     .map(c => computeComponentProps(c).outline.filter(p => Number.isFinite(p.x) && Number.isFinite(p.y)))
     .filter(o => o.length >= 2);
 
+  const drafting = project.drawingEntities ?? [];
   // Overall extents (components preferred, section bounds as fallback)
   let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
-  for (const outline of outlines) {
+  for (const outline of [...outlines, ...drafting.map(e => e.points)]) {
     for (const p of outline) {
       if (p.x < minX) minX = p.x;
       if (p.x > maxX) maxX = p.x;
@@ -302,6 +315,13 @@ export function exportDXF(project: SectionProject, props: SectionProperties): st
       dxf += generateDXFText(comp.name, compProps.cx, compProps.cy, textHeight, 'TEXT');
     }
   });
+
+  for (const entity of drafting) {
+    if (entity.kind === 'point') {
+      const p = entity.points[0];
+      dxf += `0\nPOINT\n8\nDRAFT\n10\n${p.x}\n20\n${p.y}\n30\n0\n`;
+    } else dxf += generateDXFPolyline(entity.points, 'DRAFT', false);
+  }
 
   // Guard: fully degenerate geometry still produces a valid (empty) DXF
   if (visibleComps.length === 0) {

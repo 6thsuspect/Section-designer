@@ -5,6 +5,8 @@ import ExportMenu from './ExportMenu';
 
 interface ToolbarProps {
   store: StoreState;
+  cadEnabled?: boolean;
+  onToggleCad?: () => void;
   onSave: () => void;
   onLoad: () => void;
   onExportJSON: () => void;
@@ -31,7 +33,7 @@ interface ToolbarProps {
 }
 
 export default function Toolbar({ 
-  store, onSave, onLoad, 
+  store, onSave, onLoad, cadEnabled = false, onToggleCad,
   onExportJSON, onExportCSV, onExportPDF, onExportDetailedPDF, onExportDXF, onExportMCT, onExportExcel, onImportFile,
   showGrid, onToggleGrid, osnap, onToggleOsnap, osnapLabels, onToggleOsnapLabels, onFitView, onOpenSettings, onOpenAbout, hasSection,
   theme, onToggleTheme 
@@ -57,6 +59,10 @@ export default function Toolbar({
       </div>
 
       <div className="w-px h-6 mx-1" style={{ background: 'var(--border)' }} />
+
+      <button className={`btn text-xs shrink-0 ${cadEnabled ? 'btn-primary' : 'btn-ghost'}`} aria-pressed={cadEnabled} onClick={onToggleCad} title="Toggle optional AutoCAD-style command drawing mode">
+        AutoCAD Mode {cadEnabled ? 'ON' : 'OFF'}
+      </button>
 
       {/* File */}
       <button className="btn btn-ghost text-xs" onClick={store.newProject} title="New (Ctrl+N)">

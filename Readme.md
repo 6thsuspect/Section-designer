@@ -1003,3 +1003,10 @@ records, with coordinate continuation lines matching the MIDAS command format.
   and line/thickness models are not generated.
 
 Run `npm run test:midas` for boundary-export regression checks.
+
+### Optional AutoCAD Mode
+
+The top-toolbar **AutoCAD Mode** toggle enables command-driven drawing, a
+resizable command window, drafting paths, precision controls, and shared undo/redo.
+It is off by default. See [CAD_MODE.md](CAD_MODE.md) for the supported commands,
+coordinate syntax, engineering safeguards, deferred operations, and tests.

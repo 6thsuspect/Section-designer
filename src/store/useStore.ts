@@ -265,6 +265,7 @@ export function useStore(): StoreState {
     updateProjectAndRecalc(p => ({
       ...p,
       components: p.components.filter(c => c.id !== id),
+      ...(p.drawingEntities ? { drawingEntities: p.drawingEntities.filter(entity => entity.id !== id) } : {}),
     }));
     setSelectedComponentId(prev => prev === id ? null : prev);
     setSelectedIds(prev => prev.filter(x => x !== id));
@@ -277,6 +278,7 @@ export function useStore(): StoreState {
     updateProjectAndRecalc(p => ({
       ...p,
       components: p.components.filter(c => !idSet.has(c.id)),
+      ...(p.drawingEntities ? { drawingEntities: p.drawingEntities.filter(entity => !idSet.has(entity.id)) } : {}),
     }));
     setSelectedComponentId(prev => prev !== null && idSet.has(prev) ? null : prev);
     setSelectedIds(prev => prev.filter(x => !idSet.has(x)));
