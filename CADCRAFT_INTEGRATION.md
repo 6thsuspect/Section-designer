@@ -132,3 +132,33 @@ These are DOM/math tests, not a real-browser visual or frame-rate benchmark.
 See `third_party/cadcraft/LICENSE-MIT` and `third_party/cadcraft/NOTICE.md` for reference
 credit. No CADCraft logo, branded image, proprietary AutoCAD asset, compiled Rust
 engine or external font is copied into the application.
+
+## Native LINE / PLINE / STRETCH follow-up
+
+Reviewed CADCraft revision `d6de2db6dbf5ae39ae9f78a54c0e0cd481d67239` before implementation:
+`crates/engine/src/cmd/draw/line_pline.rs` (point acquisition, active Undo,
+last-point rubber band, closed LwPolyline vertices) and
+`crates/engine/src/cmd/modify/stretch.rs` (box/polygon areas, boundary vertex
+mask, base/displacement phases). Adapted those concepts to the existing React
+controller and TypeScript shared model; no Rust runtime or second geometry engine.
+
+PLINE now remains one draft entity with unique vertices and explicit `closed`
+metadata, rather than automatically becoming an engineering component. BOUNDARY
+retains the validated section-creation workflow; previously saved sections remain
+unchanged. LINE retains this application's connected-path representation, not
+CADCraft's separate per-segment handles. Completed commands use the shared undo
+stack, including Escape-finished paths. Pending active Undo edits the point list.
+
+STRETCH supports crossing windows and `CP` polygons, real per-vertex geometry,
+base/displacement coordinates, green vertex masks, and non-destructive previews
+computed by the same operation used for commit. Existing analytic/hollow/associated
+component restrictions still apply. Polyline offset uses straight-edge miter
+intersections; trimming keeps one connected chain and rejects disconnected results.
+These are scoped native capabilities, not full AutoCAD modify-command parity.
+
+Acceptance coverage is in `scripts/verify-cad.mts` and
+`scripts/verify-cad-ui.tsx`: single entity/closure metadata, first-vertex mouse snap,
+coordinate LINE closure, C closure, active Undo, Escape completion, polygon stretch
+preview/cancel/confirm, opposite-side invariance, X/Y/XY geometry, shared undo/redo,
+BOUNDARY conversion, offset/trim, closing-edge selection/explode, JSON and DXF.
+UI verification uses jsdom, not a real-browser visual audit.

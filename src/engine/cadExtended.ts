@@ -1,3 +1,5 @@
+import { cadPathPoints, isClosedCadPath, uniqueCadVertices } from './cadPath';
+import { validateStretchPolygon } from './cadStretchArea';
 import { computeComponentProps } from './geometry';
 import type { Point, SectionProject } from './types';
 import {
@@ -47,7 +49,8 @@ export function fitCadSpline(points: Point[], closed = false): Point[] {
   if (points.some((p, i) => i > 0 && near(p, points[i - 1])))
     throw new Error('Consecutive fit points must differ.');
   const pts = closed && near(points[0], points.at(-1)!) ? points.slice(0, -1) : points;
-  if (closed && pts.length < 3) throw new Error('A closed spline needs at least three fit points.');
+  if (closed && pts.length < 3)
+    throw new Error('A closed spline needs at least three fit points.');
   const result: Point[] = [];
   const at = (i: number) =>
     closed ? pts[(i + pts.length) % pts.length] : pts[Math.max(0, Math.min(pts.length - 1, i))];
@@ -105,7 +108,10 @@ function replaceDrafts(
   const ids = new Set(removed.map((e) => e.id));
   return {
     ...project,
-    drawingEntities: [...(project.drawingEntities ?? []).filter((e) => !ids.has(e.id)), ...added],
+    drawingEntities: [
+      ...(project.drawingEntities ?? []).filter((e) => !ids.has(e.id)),
+      ...added,
+    ],
   };
 }
 function lineParameter(a: Point, b: Point, p: Point): number {
@@ -163,10 +169,17 @@ function offset(
       ...project,
       components: [
         ...project.components,
-        { ...component, id: crypto.randomUUID(), name: component.name + ' offset', geometry },
+        {
+          ...component,
+          id: crypto.randomUUID(),
+          name: component.name + ' offset',
+          geometry,
+        },
       ],
     };
   }
+  const path = selectedDrafts(project, ids, 1)[0];
+  if (path.kind === 'polyline') return offsetPath(project, path, amount, side);
   const [line] = selectedDrafts(project, ids, 1, true),
     [a, b] = line.points,
     direction = unit(sub(b, a));
@@ -176,8 +189,120 @@ function offset(
   const delta = mul(normal, Math.sign(projection) * amount);
   return {
     ...project,
-    drawingEntities: [...(project.drawingEntities ?? []), draft([add(a, delta), add(b, delta)])],
+    drawingEntities: [
+      ...(project.drawingEntities ?? []),
+      draft([add(a, delta), add(b, delta)]),
+    ],
   };
+}
+
+/** Mitered straight-edge polyline offset; vertices are intersections of parallel edges. */
+function offsetPath(
+  project: SectionProject,
+  entity: DrawingEntity,
+  amount: number,
+  side: Point,
+): SectionProject {
+  const closed = isClosedCadPath(entity),
+    pts = closed ? uniqueCadVertices(entity.points) : entity.points;
+  const edges = pts.slice(0, closed ? pts.length : -1).map((a, i) => {
+    const b = pts[(i + 1) % pts.length],
+      d = unit(sub(b, a));
+    const t = Math.max(0, Math.min(distance(a, b), dot(sub(side, a), d)));
+    return {
+      a,
+      b,
+      n: { x: -d.y, y: d.x },
+      distance: distance(side, add(a, mul(d, t))),
+    };
+  });
+  const nearest = edges.reduce((a, b) => (a.distance <= b.distance ? a : b));
+  const signed = dot(sub(side, nearest.a), nearest.n);
+  if (Math.abs(signed) < EPS) throw new Error('Choose a point off the polyline.');
+  const shift = Math.sign(signed) * amount;
+  const shifted = edges.map((e) => ({
+    a: add(e.a, mul(e.n, shift)),
+    b: add(e.b, mul(e.n, shift)),
+  }));
+  const points = pts.map((p, i) => {
+    if (!closed && i === 0) return shifted[0].a;
+    if (!closed && i === pts.length - 1) return shifted.at(-1)!.b;
+    const before = shifted[(i + shifted.length - 1) % shifted.length],
+      after = shifted[i];
+    const u = unit(sub(before.b, before.a)),
+      v = unit(sub(after.b, after.a));
+    if (Math.abs(cross(u, v)) < EPS && dot(u, v) > 0) return after.a;
+    return intersectCadLines(before.a, before.b, after.a, after.b).point;
+  });
+  if (closed) validateStretchPolygon(points);
+  // Reject offsets past an edge's collapse rather than returning an inverted polygon.
+  if (
+    edges.some(
+      (e, i) => dot(sub(points[(i + 1) % points.length], points[i]), sub(e.b, e.a)) <= EPS,
+    )
+  )
+    throw new Error('Offset would collapse or reverse a segment.');
+  return {
+    ...project,
+    drawingEntities: [
+      ...(project.drawingEntities ?? []),
+      { ...entity, id: crypto.randomUUID(), points, closed },
+    ],
+  };
+}
+
+/** Trim a connected path against an infinite cutting line without inventing a closing edge. */
+function trimPath(
+  project: SectionProject,
+  entity: DrawingEntity,
+  a: Point,
+  b: Point,
+  pick: Point,
+): SectionProject {
+  const direction = unit(sub(b, a)),
+    signed = (p: Point) => cross(direction, sub(p, a));
+  const remove = signed(pick);
+  if (Math.abs(remove) < EPS)
+    throw new Error('Pick the side to remove, off the cutting boundary.');
+  const points = cadPathPoints(entity),
+    chains: Point[][] = [];
+  let chain: Point[] = [];
+  const flush = () => {
+    if (chain.length >= 2) chains.push(chain);
+    chain = [];
+  };
+  let crossings = 0;
+  for (let i = 1; i < points.length; i++) {
+    const p = points[i - 1],
+      q = points[i],
+      sp = signed(p),
+      sq = signed(q);
+    const kp = sp * Math.sign(remove) <= EPS,
+      kq = sq * Math.sign(remove) <= EPS;
+    if (kp && !chain.length) chain.push(p);
+    if (kp !== kq) {
+      const hit = add(p, mul(sub(q, p), sp / (sp - sq)));
+      crossings++;
+      if (kp) {
+        if (!near(chain.at(-1)!, hit)) chain.push(hit);
+        flush();
+      } else chain = [hit];
+    }
+    if (kq && (!chain.length || !near(chain.at(-1)!, q))) chain.push(q);
+    if (!kq) flush();
+  }
+  flush();
+  if (
+    isClosedCadPath(entity) &&
+    chains.length > 1 &&
+    near(chains.at(-1)!.at(-1)!, chains[0][0])
+  ) {
+    const last = chains.pop()!;
+    chains[0] = [...last, ...chains[0].slice(1)];
+  }
+  if (!crossings || chains.length !== 1)
+    throw new Error('Cut must leave one connected polyline; split complex paths first.');
+  return replaceDrafts(project, [entity], [{ ...entity, points: chains[0], closed: false }]);
 }
 
 function roundCorner(
@@ -193,7 +318,9 @@ function roundCorner(
     second.points[0],
     second.points[1],
   ).point;
-  const picks = chamfer ? ([values[2], values[3]] as Point[]) : ([values[1], values[2]] as Point[]);
+  const picks = chamfer
+    ? ([values[2], values[3]] as Point[])
+    : ([values[1], values[2]] as Point[]);
   const kept = [first, second].map((line, i) => {
     if (near(picks[i], intersection))
       throw new Error('Pick the side to keep, away from the intersection.');
@@ -210,7 +337,10 @@ function roundCorner(
   const radius = values[0] as number;
   const d1 = chamfer ? radius : radius / Math.tan(halfAngle),
     d2 = chamfer ? (values[1] as number) : d1;
-  if (d1 >= distance(kept[0], intersection) - EPS || d2 >= distance(kept[1], intersection) - EPS)
+  if (
+    d1 >= distance(kept[0], intersection) - EPS ||
+    d2 >= distance(kept[1], intersection) - EPS
+  )
     throw new Error(
       'Radius or chamfer distance would consume a kept line. Choose a smaller value or farther kept endpoints.',
     );
@@ -233,6 +363,10 @@ function roundCorner(
 function join(project: SectionProject, ids: string[]): SectionProject {
   const selected = selectedDrafts(project, ids);
   if (selected.length < 2) throw new Error('Select at least two connected draft paths.');
+  if (selected.some(isClosedCadPath))
+    throw new Error(
+      'Closed polylines already form complete paths; EXPLODE first to join segments.',
+    );
   const remaining = selected.slice(1),
     points = [...selected[0].points];
   while (remaining.length) {
@@ -257,7 +391,10 @@ function join(project: SectionProject, ids: string[]): SectionProject {
   const endpoints = selected.flatMap((e) => [e.points[0], e.points.at(-1)!]);
   if (endpoints.some((p) => endpoints.filter((q) => near(p, q)).length > 2))
     throw new Error('Branching paths cannot be joined.');
-  return replaceDrafts(project, selected, [draft(points, 'polyline')]);
+  const closed = points.length > 2 && near(points[0], points.at(-1)!);
+  return replaceDrafts(project, selected, [
+    { ...draft(closed ? points.slice(0, -1) : points, 'polyline'), closed },
+  ]);
 }
 
 function array(
@@ -270,7 +407,8 @@ function array(
   const count = values[0] as number,
     columns = polar ? 1 : (values[1] as number),
     total = count * columns;
-  if (total < 2) throw new Error('Array must contain at least two items including the original.');
+  if (total < 2)
+    throw new Error('Array must contain at least two items including the original.');
   if (total * ids.length > 1000)
     throw new Error('Array is limited to 1000 resulting selected objects.');
   if (polar && (!(Math.abs(values[2] as number) > 0) || Math.abs(values[2] as number) > 360))
@@ -295,7 +433,10 @@ function array(
         .map((e) => e.id);
       const sweep = values[2] as number,
         divisor = Math.abs(sweep) === 360 ? count : count - 1;
-      next = transformCadSelection(next, newIds, 'ROTATE', [values[1], (sweep * index) / divisor]);
+      next = transformCadSelection(next, newIds, 'ROTATE', [
+        values[1],
+        (sweep * index) / divisor,
+      ]);
     }
   }
   return next;
@@ -325,7 +466,8 @@ export function executeCadExtended(
       (typeof value !== 'number' || !Number.isFinite(value))
     )
       throw new Error('Expected a finite number.');
-    if (type === 'positive' && (value as number) <= 0) throw new Error('Value must be positive.');
+    if (type === 'positive' && (value as number) <= 0)
+      throw new Error('Value must be positive.');
     if (
       type === 'count' &&
       (!Number.isInteger(value) || (value as number) < 1 || (value as number) > 1000)
@@ -426,7 +568,10 @@ export function executeCadExtended(
     const paths = selectedDrafts(project, ids);
     if (paths.some((e) => e.points.length < 3))
       throw new Error('Select compound draft paths with at least three vertices.');
-    const segments = paths.flatMap((e) => e.points.slice(1).map((p, i) => draft([e.points[i], p])));
+    const segments = paths.flatMap((e) => {
+      const points = cadPathPoints(e);
+      return points.slice(1).map((p, i) => draft([points[i], p]));
+    });
     if (segments.length > 5000)
       throw new Error('Explode is limited to 5000 segments per operation.');
     next = replaceDrafts(project, paths, segments);
@@ -436,15 +581,26 @@ export function executeCadExtended(
       removed: DrawingEntity[] = [];
     const same = (a: DrawingEntity, b: DrawingEntity) =>
       a.kind === b.kind &&
+      isClosedCadPath(a) === isClosedCadPath(b) &&
       a.points.length === b.points.length &&
       (a.points.every((p, i) => p.x === b.points[i].x && p.y === b.points[i].y) ||
-        a.points.every((p, i) => p.x === b.points.at(-1 - i)!.x && p.y === b.points.at(-1 - i)!.y));
+        a.points.every(
+          (p, i) => p.x === b.points.at(-1 - i)!.x && p.y === b.points.at(-1 - i)!.y,
+        ));
     for (const entity of paths) {
       if (kept.some((e) => same(e, entity))) removed.push(entity);
       else kept.push(entity);
     }
     if (!removed.length) throw new Error('No exact duplicate draft paths found.');
     next = replaceDrafts(project, removed, []);
+  } else if (name === 'TRIM' && selectedDrafts(project, ids, 1)[0].kind === 'polyline') {
+    next = trimPath(
+      project,
+      selectedDrafts(project, ids, 1)[0],
+      values[0] as Point,
+      values[1] as Point,
+      values[2] as Point,
+    );
   } else {
     const [line] = selectedDrafts(project, ids, 1, true),
       [a, b] = line.points;
@@ -455,7 +611,8 @@ export function executeCadExtended(
         if (cut.t <= EPS || cut.t >= 1 - EPS)
           throw new Error('Cutting boundary must cross the interior of the target.');
         const side = dot(sub(pick, cut.point), sub(b, a));
-        if (Math.abs(side) < EPS) throw new Error('Pick the part to remove, not the intersection.');
+        if (Math.abs(side) < EPS)
+          throw new Error('Pick the part to remove, not the intersection.');
         next = replaceDrafts(
           project,
           [line],

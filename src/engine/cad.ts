@@ -1,3 +1,5 @@
+import { cadPathPoints, sameCadPoint } from './cadPath';
+import { inStretchArea, validateStretchPolygon, type CadStretchArea } from './cadStretchArea';
 import { CAD_EXTENDED_COMMANDS } from './cadExtendedCatalog';
 import type { Point, SectionComponent, SectionProject, LengthUnit } from './types';
 import { computeComponentProps, segmentsIntersect, pointInRect } from './geometry';
@@ -6,6 +8,7 @@ import { componentRegion, keyholeAll, signedArea } from './combine';
 export interface DrawingEntity {
   id: string;
   kind: 'line' | 'polyline' | 'arc' | 'point' | 'dimension' | 'text' | 'xline' | 'ray';
+  closed?: boolean;
   text?: string;
   textHeight?: number;
   textRotation?: number;
@@ -26,7 +29,13 @@ const command = (
   help: string,
   prompts: string[],
   types: CadCommand['types'],
-): CadCommand => ({ name, aliases: aliases.split(' ').filter(Boolean), help, prompts, types });
+): CadCommand => ({
+  name,
+  aliases: aliases.split(' ').filter(Boolean),
+  help,
+  prompts,
+  types,
+});
 export const CAD_COMMANDS: CadCommand[] = [
   ...CAD_EXTENDED_COMMANDS,
   command(
@@ -38,8 +47,8 @@ export const CAD_COMMANDS: CadCommand[] = [
   ),
   command(
     'PLINE',
-    'PL',
-    'Connected polyline; Close creates a section boundary.',
+    'PL POLYLINE',
+    'Single polyline; first-point snap or Close sets closed=true. BOUNDARY converts it to a section.',
     ['Specify first point:', 'Specify next point or [Undo/Close] (Enter finishes):'],
     ['point', 'point'],
   ),
@@ -88,9 +97,9 @@ export const CAD_COMMANDS: CadCommand[] = [
   command(
     'STRETCH',
     'S',
-    'Crossing window selects vertices; specify base and destination. Partial stretch supports solid polygonal components and draft paths; fully enclosed objects move.',
+    'Crossing window or CP crossing polygon selects vertices; specify base and destination. Partial stretch supports solid polygonal components and draft paths; fully enclosed objects move.',
     [
-      'First crossing-window corner:',
+      'First crossing-window corner or [CPolygon]:',
       'Opposite crossing-window corner:',
       'Base point:',
       'Destination point:',
@@ -208,11 +217,25 @@ export const CAD_COMMANDS: CadCommand[] = [
   command('SAVE', '', 'Open the existing save dialog.', [], []),
   command('OPEN', '', 'Open the existing load dialog.', [], []),
   command('HELP', '', 'List supported commands and aliases.', [], []),
-  command('CANCEL', 'ESC', 'Cancel incomplete input without changing completed geometry.', [], []),
+  command(
+    'CANCEL',
+    'ESC',
+    'Cancel incomplete input without changing completed geometry.',
+    [],
+    [],
+  ),
 ];
 export const findCadCommand = (text: string) =>
-  CAD_COMMANDS.find((c) => c.name === text.toUpperCase() || c.aliases.includes(text.toUpperCase()));
-const mm: Record<LengthUnit, number> = { mm: 1, cm: 10, m: 1000, inch: 25.4, ft: 304.8 };
+  CAD_COMMANDS.find(
+    (c) => c.name === text.toUpperCase() || c.aliases.includes(text.toUpperCase()),
+  );
+const mm: Record<LengthUnit, number> = {
+  mm: 1,
+  cm: 10,
+  m: 1000,
+  inch: 25.4,
+  ft: 304.8,
+};
 export function cadNumber(text: string, unit: LengthUnit, dimensional = true): number {
   const match = text
     .trim()
@@ -255,6 +278,8 @@ export type CadValue = Point | number | string;
 export interface CadSession {
   command: CadCommand;
   values: CadValue[];
+  stretchPolygon?: boolean;
+  stretchArea?: CadStretchArea;
 }
 export function cadPrompt(session: CadSession): string {
   return session.command.prompts[
@@ -355,13 +380,21 @@ export function cadCreate(
       geometry: { width: w, height: h },
     };
   } else if (name === 'CIRCLE')
-    comp = { ...base, type: 'circle', position: a, geometry: { radius: v[1] as number } };
+    comp = {
+      ...base,
+      type: 'circle',
+      position: a,
+      geometry: { radius: v[1] as number },
+    };
   else if (name === 'ELLIPSE')
     comp = {
       ...base,
       type: 'ellipse',
       position: a,
-      geometry: { majorAxis: (v[1] as number) * 2, minorAxis: (v[2] as number) * 2 },
+      geometry: {
+        majorAxis: (v[1] as number) * 2,
+        minorAxis: (v[2] as number) * 2,
+      },
     };
   else if (name === 'POLYGON') {
     const n = v[0] as number,
@@ -411,21 +444,41 @@ export function cadCreate(
         }
       const area = points.reduce((s, p, i) => {
         const q = points[(i + 1) % points.length];
-        return s + p.x * q.y - q.x * p.y;
+        return (
+          s +
+          (p.x - points[0].x) * (q.y - points[0].y) -
+          (q.x - points[0].x) * (p.y - points[0].y)
+        );
       }, 0);
       if (Math.abs(area) < 1e-9) throw new Error('A closed section must have non-zero area.');
-      comp = sectionShape(project, name, points);
+      draft = { id: id(), kind: 'polyline', points, closed: true };
     } else
       draft = {
         id: id(),
         kind: name === 'LINE' ? 'line' : 'polyline',
         points: close ? [...points, points[0]] : points,
+        ...(name === 'PLINE' ? { closed: false } : {}),
       };
   }
   return {
     ...project,
     components: comp ? [...project.components, comp] : project.components,
-    drawingEntities: draft ? [...(project.drawingEntities ?? []), draft] : project.drawingEntities,
+    drawingEntities: draft
+      ? [...(project.drawingEntities ?? []), draft]
+      : project.drawingEntities,
+  };
+}
+/** Explicit engineering conversion: validate a path, then create one structural boundary. */
+export function cadSectionBoundary(project: SectionProject, points: Point[]): SectionProject {
+  const path = cadCreate(
+    { ...project, components: [], drawingEntities: [] },
+    'PLINE',
+    points,
+    true,
+  ).drawingEntities![0];
+  return {
+    ...project,
+    components: [...project.components, sectionShape(project, 'BOUNDARY', path.points)],
   };
 }
 export function transformCadSelection(
@@ -545,7 +598,10 @@ export function transformCadSelection(
   )
     throw new Error('Transformation would collapse a dimension.');
   const finite = (p: Point) =>
-    Number.isFinite(p.x) && Number.isFinite(p.y) && Math.abs(p.x) <= 1e12 && Math.abs(p.y) <= 1e12;
+    Number.isFinite(p.x) &&
+    Number.isFinite(p.y) &&
+    Math.abs(p.x) <= 1e12 &&
+    Math.abs(p.y) <= 1e12;
   if (
     changed.some(
       (c) =>
@@ -560,7 +616,10 @@ export function transformCadSelection(
     throw new Error('Transformation exceeds the supported coordinate range (±1e12).');
   return {
     ...project,
-    components: [...project.components.filter((c) => copy || !selected.includes(c)), ...changed],
+    components: [
+      ...project.components.filter((c) => copy || !selected.includes(c)),
+      ...changed,
+    ],
     drawingEntities: [
       ...(project.drawingEntities ?? []).filter((e) => copy || !selectedDrafts.includes(e)),
       ...drafts,
@@ -571,7 +630,9 @@ export function transformCadSelection(
 export const componentWorldRings = (c: SectionComponent) => componentRegion(c).flat();
 export function cadAllPoints(project: SectionProject): Point[] {
   return [
-    ...project.components.filter((c) => c.visible).flatMap((c) => computeComponentProps(c).outline),
+    ...project.components
+      .filter((c) => c.visible)
+      .flatMap((c) => computeComponentProps(c).outline),
     ...(project.drawingEntities ?? []).flatMap(drawingEntityPoints),
   ];
 }
@@ -593,7 +654,9 @@ export function draftInRect(
   if (entity.kind === 'dimension') {
     const segments = dimensionGeometry(entity).segments;
     return crossing
-      ? segments.some((points) => draftInRect({ id: entity.id, kind: 'line', points }, rect, true))
+      ? segments.some((points) =>
+          draftInRect({ id: entity.id, kind: 'line', points }, rect, true),
+        )
       : segments.flat().every((p) => pointInRect(p, rect.x0, rect.y0, rect.x1, rect.y1));
   }
   const { x0, y0, x1, y1 } = rect;
@@ -606,10 +669,11 @@ export function draftInRect(
     { x: x1, y: y1 },
     { x: x0, y: y1 },
   ];
-  return entity.points.some(
+  const path = cadPathPoints(entity);
+  return path.some(
     (p, i) =>
       i > 0 &&
-      corners.some((a, j) => segmentsIntersect(entity.points[i - 1], p, a, corners[(j + 1) % 4])),
+      corners.some((a, j) => segmentsIntersect(path[i - 1], p, a, corners[(j + 1) % 4])),
   );
 }
 
@@ -642,8 +706,14 @@ export function dimensionGeometry(entity: DrawingEntity, tick = 3) {
   ];
   for (const p of [start, end])
     segments.push([
-      { x: p.x - (axis.x + normal.x) * tick, y: p.y - (axis.y + normal.y) * tick },
-      { x: p.x + (axis.x + normal.x) * tick, y: p.y + (axis.y + normal.y) * tick },
+      {
+        x: p.x - (axis.x + normal.x) * tick,
+        y: p.y - (axis.y + normal.y) * tick,
+      },
+      {
+        x: p.x + (axis.x + normal.x) * tick,
+        y: p.y + (axis.y + normal.y) * tick,
+      },
     ]);
   const measurement = Math.abs((b.x - a.x) * axis.x + (b.y - a.y) * axis.y);
   return {
@@ -655,9 +725,21 @@ export function dimensionGeometry(entity: DrawingEntity, tick = 3) {
   };
 }
 
-export function stretchCad(project: SectionProject, values: CadValue[]): SectionProject {
-  const [a, b, base, destination] = values as Point[];
-  const inside = (p: Point) => pointInRect(p, a.x, a.y, b.x, b.y);
+export function stretchCad(
+  project: SectionProject,
+  values: CadValue[],
+  area?: CadStretchArea,
+): SectionProject {
+  const [a, b] = values as Point[];
+  const [base, destination] = (area ? values : values.slice(2)) as Point[];
+  const region: CadStretchArea = area ?? { kind: 'window', a, b };
+  if (region.kind === 'polygon') validateStretchPolygon(region.points);
+  if (
+    region.kind === 'window' &&
+    (Math.abs(region.a.x - region.b.x) < 1e-8 || Math.abs(region.a.y - region.b.y) < 1e-8)
+  )
+    throw new Error('Crossing window must enclose an area.');
+  const inside = (p: Point) => inStretchArea(p, region);
   const dx = destination.x - base.x,
     dy = destination.y - base.y;
   if (!dx && !dy) throw new Error('Stretch displacement must be non-zero.');
@@ -680,11 +762,9 @@ export function stretchCad(project: SectionProject, values: CadValue[]): Section
         'Partial STRETCH supports solid polygonal components only; enclose curved/hollow objects fully to move them.',
       );
     const stretched = rings[0].map((p) => (inside(p) ? move(p) : p));
-    const validated = cadCreate(
+    const validated = cadSectionBoundary(
       { ...project, components: [], drawingEntities: [] },
-      'PLINE',
       stretched,
-      true,
     ).components[0];
     return {
       ...validated,
@@ -697,12 +777,27 @@ export function stretchCad(project: SectionProject, values: CadValue[]): Section
   const drawingEntities = project.drawingEntities?.map((entity) => {
     if (!entity.points.some(inside)) return entity;
     if (['arc', 'xline', 'ray'].includes(entity.kind) && !entity.points.every(inside))
-      throw new Error('Partially stretching an arc is not supported; enclose it fully to move.');
+      throw new Error(
+        'Partially stretching an arc is not supported; enclose it fully to move.',
+      );
     count++;
-    return { ...entity, points: entity.points.map((p) => (inside(p) ? move(p) : p)) };
+    const points = entity.points.map((p) => (inside(p) ? move(p) : p));
+    if (
+      points.some(
+        (p, i) => i > 0 && Math.hypot(p.x - points[i - 1].x, p.y - points[i - 1].y) < 1e-8,
+      )
+    )
+      throw new Error('Stretch would collapse a segment.');
+    if (entity.closed && sameCadPoint(points[0], points.at(-1)!))
+      throw new Error('Stretch would collapse the closing segment.');
+    if (entity.closed)
+      cadCreate({ ...project, components: [], drawingEntities: [] }, 'PLINE', points, true);
+    return { ...entity, points };
   });
   if (
-    drawingEntities?.some((e) => e.kind === 'dimension' && dimensionGeometry(e).measurement < 1e-10)
+    drawingEntities?.some(
+      (e) => e.kind === 'dimension' && dimensionGeometry(e).measurement < 1e-10,
+    )
   )
     throw new Error('Stretch would collapse a dimension.');
   if (!count) throw new Error('No unlocked vertices inside the crossing window.');
@@ -774,7 +869,9 @@ export function drawingEntityPoints(entity: DrawingEntity): Point[] {
       y: origin.y + p.x * Math.sin(radians) + p.y * Math.cos(radians),
     }));
   }
-  return entity.kind === 'dimension' ? dimensionGeometry(entity).segments.flat() : entity.points;
+  return entity.kind === 'dimension'
+    ? dimensionGeometry(entity).segments.flat()
+    : cadPathPoints(entity);
 }
 
 /** Clip infinite construction geometry only for display/hit-testing, never its stored anchors. */

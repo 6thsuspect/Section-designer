@@ -78,14 +78,14 @@ export const CAD_EXTENDED_COMMANDS: CadCommand[] = [
   {
     name: 'OFFSET',
     aliases: ['O'],
-    help: 'Preselect one draft straight line, section circle or rectangle. Offset towards a picked side; originals retained.',
+    help: 'Preselect one draft line/polyline, section circle or rectangle. Offset towards a picked side; originals retained.',
     prompts: ['Offset distance:', 'Point on desired side:'],
     types: ['positive', 'point'],
   },
   {
     name: 'TRIM',
     aliases: ['TR'],
-    help: 'Preselect one two-point draft line. Define an infinite cutting line and pick the part to remove.',
+    help: 'Preselect one draft line or polyline. Define an infinite cutting line and pick the side to remove; the result must stay connected.',
     prompts: [
       'Cutting line first point:',
       'Cutting line second point:',

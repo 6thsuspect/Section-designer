@@ -20,7 +20,9 @@ async function main() {
         disconnect() {}
       },
     },
-    requestAnimationFrame: { value: (cb: FrameRequestCallback) => setTimeout(() => cb(0), 0) },
+    requestAnimationFrame: {
+      value: (cb: FrameRequestCallback) => setTimeout(() => cb(0), 0),
+    },
     cancelAnimationFrame: { value: (id: number) => clearTimeout(id) },
   });
   dom.window.HTMLElement.prototype.scrollTo = () => {};
@@ -112,7 +114,9 @@ async function main() {
   assert.ok(document.body.textContent?.includes('POLYGON completed.'));
   await submit('HATCH');
   assert.ok(
-    document.body.textContent?.includes('Unknown command. HELP lists only implemented commands.'),
+    document.body.textContent?.includes(
+      'Unknown command. HELP lists only implemented commands.',
+    ),
   );
   await submit('ZOOM');
   await submit('EXTENTS');
@@ -122,7 +126,10 @@ async function main() {
   await submit('2000,2000');
   await click(toggle());
   assert.equal(document.querySelector('[aria-label="CAD command window"]'), null);
-  assert.equal(document.querySelector('svg.w-full.h-full')!.getAttribute('viewBox'), originalView);
+  assert.equal(
+    document.querySelector('svg.w-full.h-full')!.getAttribute('viewBox'),
+    originalView,
+  );
   assert.equal(document.querySelector('[data-cad-ui]'), null);
   // CAD-only function keys must not change view/layout while mode is off.
   await act(async () => {
@@ -133,13 +140,17 @@ async function main() {
   await submit('SELECT');
   await submit('ALL');
   await submit('LIST');
-  assert.ok(!document.querySelector('[role="log"]')?.textContent?.includes('position=2000,2000'));
+  assert.ok(
+    !document.querySelector('[role="log"]')?.textContent?.includes('position=2000,2000'),
+  );
   const collapse = document.querySelector(
     '[aria-label="Collapse command window"]',
   ) as HTMLButtonElement;
   await click(collapse);
   assert.equal(document.getElementById('cad-command-input'), null);
-  await click(document.querySelector('[aria-label="Expand command window"]') as HTMLButtonElement);
+  await click(
+    document.querySelector('[aria-label="Expand command window"]') as HTMLButtonElement,
+  );
   assert.ok(input());
   await click(buttons().find((b) => b.textContent === 'Float')!);
   assert.ok(
@@ -155,13 +166,20 @@ async function main() {
   const previousHeight = parseFloat(panel.style.height);
   await act(async () =>
     separator.dispatchEvent(
-      new dom.window.KeyboardEvent('keydown', { key: 'ArrowUp', bubbles: true }),
+      new dom.window.KeyboardEvent('keydown', {
+        key: 'ArrowUp',
+        bubbles: true,
+      }),
     ),
   );
   assert.equal(parseFloat(panel.style.height), previousHeight + 20);
   await act(async () =>
     window.dispatchEvent(
-      new dom.window.KeyboardEvent('keydown', { key: 'F8', bubbles: true, cancelable: true }),
+      new dom.window.KeyboardEvent('keydown', {
+        key: 'F8',
+        bubbles: true,
+        cancelable: true,
+      }),
     ),
   );
   assert.equal(
@@ -172,7 +190,11 @@ async function main() {
   );
   await act(async () =>
     window.dispatchEvent(
-      new dom.window.KeyboardEvent('keydown', { key: 'F8', bubbles: true, cancelable: true }),
+      new dom.window.KeyboardEvent('keydown', {
+        key: 'F8',
+        bubbles: true,
+        cancelable: true,
+      }),
     ),
   );
   // Mouse point entry and preview use the real canvas coordinate transform.
@@ -203,7 +225,11 @@ async function main() {
   );
   await act(async () =>
     svg.dispatchEvent(
-      new dom.window.MouseEvent('pointermove', { bubbles: true, clientX: 500, clientY: 350 }),
+      new dom.window.MouseEvent('pointermove', {
+        bubbles: true,
+        clientX: 500,
+        clientY: 350,
+      }),
     ),
   );
   assert.ok(svg.querySelector('polyline[stroke-dasharray]'), 'mouse preview should render');
@@ -249,13 +275,21 @@ async function main() {
   await submit('0,0');
   await act(async () =>
     input().dispatchEvent(
-      new dom.window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }),
+      new dom.window.KeyboardEvent('keydown', {
+        key: 'Escape',
+        bubbles: true,
+        cancelable: true,
+      }),
     ),
   );
   assert.equal(input().value, '');
   await act(async () =>
     input().dispatchEvent(
-      new dom.window.KeyboardEvent('keydown', { key: 'ArrowUp', bubbles: true, cancelable: true }),
+      new dom.window.KeyboardEvent('keydown', {
+        key: 'ArrowUp',
+        bubbles: true,
+        cancelable: true,
+      }),
     ),
   );
   assert.equal(input().value, '0,0');
@@ -270,22 +304,30 @@ async function main() {
   });
   await act(async () =>
     input().dispatchEvent(
-      new dom.window.KeyboardEvent('keydown', { key: 'Tab', bubbles: true, cancelable: true }),
+      new dom.window.KeyboardEvent('keydown', {
+        key: 'Tab',
+        bubbles: true,
+        cancelable: true,
+      }),
     ),
   );
   const firstCompletion = input().value;
   await act(async () =>
     input().dispatchEvent(
-      new dom.window.KeyboardEvent('keydown', { key: 'Tab', bubbles: true, cancelable: true }),
+      new dom.window.KeyboardEvent('keydown', {
+        key: 'Tab',
+        bubbles: true,
+        cancelable: true,
+      }),
     ),
   );
   assert.notEqual(input().value, firstCompletion);
   const typeDraft = async (value: string) => {
     await act(async () => {
-      Object.getOwnPropertyDescriptor(dom.window.HTMLInputElement.prototype, 'value')!.set!.call(
-        input(),
-        value,
-      );
+      Object.getOwnPropertyDescriptor(
+        dom.window.HTMLInputElement.prototype,
+        'value',
+      )!.set!.call(input(), value);
       input().dispatchEvent(new dom.window.Event('input', { bubbles: true }));
     });
   };
@@ -315,7 +357,8 @@ async function main() {
     ) as HTMLElement,
   );
   assert.ok(document.querySelector('header')?.textContent?.includes('DIM'));
-  const countDimensions = () => document.querySelectorAll('[data-testid="cad-dimension"]').length;
+  const countDimensions = () =>
+    document.querySelectorAll('[data-testid="cad-dimension"]').length;
   const beforeDims = countDimensions();
   await space('0,0');
   await space('30,40');
@@ -348,7 +391,9 @@ async function main() {
   await space('1110,1060');
   await space('0,0');
   await space('50,0');
-  assert.ok(document.querySelector('[role="log"]')?.textContent?.includes('STRETCH completed.'));
+  assert.ok(
+    document.querySelector('[role="log"]')?.textContent?.includes('STRETCH completed.'),
+  );
   await submit('SELECT');
   await submit('WINDOW');
   await submit('999,999');
@@ -365,7 +410,11 @@ async function main() {
   await submit('10,0');
   await act(async () =>
     svg.dispatchEvent(
-      new dom.window.MouseEvent('pointermove', { bubbles: true, clientX: 500, clientY: 300 }),
+      new dom.window.MouseEvent('pointermove', {
+        bubbles: true,
+        clientX: 500,
+        clientY: 300,
+      }),
     ),
   );
   assert.equal(countDimensions(), beforeDims + 3, 'dimension preview should appear');
@@ -402,7 +451,9 @@ async function main() {
   await submit('2P');
   await submit('6000,6000');
   await submit('6020,6000');
-  assert.ok(document.querySelector('[role="log"]')?.textContent?.includes('CIRCLE2P completed.'));
+  assert.ok(
+    document.querySelector('[role="log"]')?.textContent?.includes('CIRCLE2P completed.'),
+  );
   await submit('DO');
   await submit('10');
   await submit('20');
@@ -487,7 +538,9 @@ async function main() {
   await submit('3');
   await submit('10010,10000');
   await submit('10000,10010');
-  assert.ok(document.querySelector('[role="log"]')?.textContent?.includes('CHAMFER completed.'));
+  assert.ok(
+    document.querySelector('[role="log"]')?.textContent?.includes('CHAMFER completed.'),
+  );
   await submit('SELECT');
   await submit('WINDOW');
   await submit('9999,9999');
@@ -499,14 +552,20 @@ async function main() {
   await submit('9999,9999');
   await submit('10011,10011');
   await submit('X');
-  assert.ok(document.querySelector('[role="log"]')?.textContent?.includes('EXPLODE completed.'));
+  assert.ok(
+    document.querySelector('[role="log"]')?.textContent?.includes('EXPLODE completed.'),
+  );
   await submit('ZOOM');
   await submit('RESET');
   await submit('L');
   await submit('0,0');
   await act(async () =>
     svg.dispatchEvent(
-      new dom.window.MouseEvent('pointermove', { bubbles: true, clientX: 500, clientY: 400 }),
+      new dom.window.MouseEvent('pointermove', {
+        bubbles: true,
+        clientX: 500,
+        clientY: 400,
+      }),
     ),
   );
   await submit('25');
@@ -514,6 +573,138 @@ async function main() {
   assert.ok(
     svg.querySelector('polyline[points="0,0 25,0"]'),
     'direct distance follows the cursor direction',
+  );
+  // First-point acquisition must win over other snaps and ORTHO, without adding a duplicate vertex.
+  await submit('ZOOM');
+  await submit('RESET');
+  await submit('POLYLINE');
+  for (const point of ['0,0', '100,0', '100,100', '0,100']) await submit(point);
+  await submit('U');
+  assert.equal(
+    svg.querySelector('[data-testid="cad-confirmed-path"]')?.getAttribute('points'),
+    '0,0 100,0 100,100',
+  );
+  await submit('0,100');
+  await act(async () =>
+    svg.dispatchEvent(
+      new dom.window.MouseEvent('pointermove', {
+        bubbles: true,
+        clientX: 401,
+        clientY: 401,
+      }),
+    ),
+  );
+  assert.ok(
+    svg.querySelector('[data-testid="cad-start-snap"]'),
+    'initial endpoint snap marker',
+  );
+  await act(async () =>
+    svg.dispatchEvent(
+      new dom.window.MouseEvent('pointerdown', {
+        bubbles: true,
+        clientX: 401,
+        clientY: 401,
+        button: 0,
+      }),
+    ),
+  );
+  const closedSquare = () =>
+    svg.querySelector('polyline[points="0,0 100,0 100,100 0,100 0,0"]');
+  assert.ok(closedSquare(), 'mouse snaps and closes precisely at first vertex');
+  await submit('UNDO');
+  assert.equal(closedSquare(), null);
+  await submit('REDO');
+  assert.ok(closedSquare());
+  await submit('SELECT');
+  await submit('WINDOW');
+  await submit('-1,-1');
+  await submit('101,101');
+  // More than one object can be in that region; use an isolated closed PLINE for following operations.
+  await submit('PLINE');
+  for (const point of ['40000,40000', '40100,40000', '40100,40100', '40000,40100'])
+    await submit(point);
+  await submit('C');
+  const sourcePath = '40000,40000 40100,40000 40100,40100 40000,40100 40000,40000';
+  assert.ok(svg.querySelector(`polyline[points="${sourcePath}"]`));
+  await submit('S');
+  await submit('CP');
+  for (const point of ['40090,39990', '40110,39990', '40110,40110', '40090,40110'])
+    await submit(point);
+  await submit('');
+  await submit('0,0');
+  await act(async () =>
+    svg.dispatchEvent(
+      new dom.window.MouseEvent('pointermove', {
+        bubbles: true,
+        clientX: 450,
+        clientY: 400,
+      }),
+    ),
+  );
+  assert.ok(svg.querySelector('[data-testid="cad-stretch-preview"]'));
+  assert.ok(
+    svg.querySelector(`polyline[points="${sourcePath}"]`),
+    'source retained until confirmation',
+  );
+  await submit('@50,0');
+  const stretchedPath = '40000,40000 40150,40000 40150,40100 40000,40100 40000,40000';
+  assert.ok(
+    svg.querySelector(`polyline[points="${stretchedPath}"]`),
+    'only right-side vertices move',
+  );
+  assert.equal(svg.querySelector('[data-testid="cad-stretch-preview"]'), null);
+  await submit('UNDO');
+  assert.ok(svg.querySelector(`polyline[points="${sourcePath}"]`));
+  await submit('REDO');
+  assert.ok(svg.querySelector(`polyline[points="${stretchedPath}"]`));
+  await submit('S');
+  await submit('40090,39990');
+  await submit('40160,40110');
+  await submit('0,0');
+  await act(async () =>
+    input().dispatchEvent(
+      new dom.window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }),
+    ),
+  );
+  assert.ok(
+    svg.querySelector(`polyline[points="${stretchedPath}"]`),
+    'cancelled STRETCH leaves geometry intact',
+  );
+  await submit('LINE');
+  for (const point of ['41000,41000', '41100,41000', '41100,41100', '41000,41000'])
+    await submit(point);
+  const linePath = '41000,41000 41100,41000 41100,41100 41000,41000';
+  assert.ok(
+    svg.querySelector(`polyline[points="${linePath}"]`),
+    'LINE coordinate entry auto-closes',
+  );
+  await submit('UNDO');
+  assert.equal(svg.querySelector(`polyline[points="${linePath}"]`), null);
+  await submit('REDO');
+  assert.ok(svg.querySelector(`polyline[points="${linePath}"]`));
+  await submit('L');
+  await submit('42000,42000');
+  await submit('@10,0');
+  await submit('@0,10');
+  await submit('U');
+  await act(async () =>
+    input().dispatchEvent(
+      new dom.window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }),
+    ),
+  );
+  assert.ok(
+    svg.querySelector('polyline[points="42000,42000 42010,42000"]'),
+    'ESC retains confirmed LINE segments after active Undo',
+  );
+  await submit('SELECT');
+  await submit('WINDOW');
+  await submit('39999,39999');
+  await submit('40151,40101');
+  await submit('BOUNDARY');
+  assert.ok(
+    document.querySelector('[role="log"]')?.textContent?.includes('BOUNDARY completed.'),
+    'closed flag supports engineering conversion: ' +
+      document.querySelector('[role="log"]')?.textContent?.slice(-1500),
   );
   await act(async () => root.unmount());
   console.log(

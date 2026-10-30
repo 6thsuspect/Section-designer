@@ -48,8 +48,11 @@ LINE
   mutate the project. ORTHO/POLAR/grid SNAP constrain **mouse** input; explicit
   typed coordinates are authoritative.
 - LINE/PLINE: continue adding points; `Undo` removes the last pending point;
-  `Close` closes the path. Enter finishes an open path. Escape/CANCEL discards
-  the incomplete path. Each completed command is one shared undo operation.
+  `Close`/`C` or snapping to the first point closes the path exactly. The initial
+  endpoint gets a green square snap marker, even with ORTHO enabled. Confirmed
+  vertices draw solid; only the next segment is rubber-banded. Enter or Escape
+  finishes confirmed LINE/PLINE geometry as an open path (at least two points).
+  CANCEL or switching mode off discards the pending path. Each completed command is one shared undo operation.
 - Space submits the current command or parameter just like Enter, including finishing
   an open path. This applies only to CAD command input, not other application fields.
 - Typing command initials opens a selectable suggestion list showing full command
@@ -87,13 +90,18 @@ not the boolean union of the selection.
 ## Stretch and dimension workflow
 
 - **STRETCH / S:** enter two crossing-window corners, a base point, then the
-  destination (or a relative displacement from the base). Vertices inside the
-  window move; vertices outside stay put. Fully enclosed objects translate.
+  destination (or `@dx,dy` displacement from the base). Alternatively type `CP`
+  at the first prompt, pick/type polygon vertices, then Enter to finish selection
+  before specifying base and destination. `U` undoes a polygon vertex. Vertices
+  on or inside the crossing area move; vertices outside stay put. Fully enclosed objects translate.
   Partially stretched rectangles/triangles become editable custom-shape polygons.
   Partial stretching supports solid polygonal sections and draft line/polyline
   vertices. Curves, hollow sections and arcs must be fully enclosed to translate;
   associated components still require the existing component tools. Empty windows,
   zero displacement and self-crossing results fail without changing the project.
+  Green vertex markers show the actual selected mask. The blue geometry preview
+  uses the same pure operation as confirmation, leaving originals untouched;
+  Escape cancels. Confirmation is one shared undo/redo step.
 - **SCALE / SC:** select objects, specify a base point and a positive factor.
 - **DIM / DIMLINEAR / DLI:** two extension origins, then the dimension-line
   location. Placement chooses horizontal or vertical measurement.
@@ -108,17 +116,29 @@ not the boolean union of the selection.
 
 ## Data and engineering safety
 
-- Rectangles, circles, ellipses, regular polygons and **closed PLINEs** are ordinary
+- Rectangles, circles, ellipses, regular polygons and **BOUNDARY-converted PLINEs** are ordinary
   section components: existing mouse editing, properties, boolean operations,
   JSON, PDF, Excel, CSV, DXF and MIDAS exports apply normally. Self-crossing closed
   PLINE boundaries are rejected. Existing CG-origin alignment, if enabled,
   continues to control the section reference frame.
-- Open lines/polylines, arcs and points are **drafting-only** entities in the same
+- Lines, open/closed polylines, arcs and points are **drafting-only** entities in the same
   project and undo snapshots. They are selectable, draggable, and command-editable,
   including after mode changes. They contribute **no area or stiffness** and do
   not appear in engineering reports or MIDAS boundaries. JSON/database saves
   preserve them; DXF writes them on the DRAFT layer (arcs as polylines).
+- PLINE/PL/POLYLINE always creates one shared-model polyline entity. A closed
+  path stores `closed: true` and unique vertices; rendering/snapping supplies the
+  closing edge. JSON retains closure and DXF POLYLINE exports flag 70=1.
+  Existing saved closed section components are not migrated or duplicated.
 - BOUNDARY converts one selected, closed draft path into a section component.
+  This explicit conversion replaces the earlier automatic PLINE-to-section step,
+  preserving editable CAD paths without accidentally adding engineering area.
+- OFFSET supports straight-edge open/closed polylines with mitered joins, retaining
+  the source. Collapsed, reversed or self-crossing offsets are rejected. TRIM
+  supports a line cutting a polyline, with a picked side to remove. A trimmed
+  closed polyline becomes one open polyline with the same ID (no artificial
+  closing edge). Cuts leaving multiple disconnected chains are rejected; split
+  complex paths first. EXPLODE includes the closing edge.
 - Locked components are excluded from modifications. Associated bolt deductions
   and combined components must use the existing component tools/uncombine first;
   command modifications fail safely rather than damage parent/child associations.

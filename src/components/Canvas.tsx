@@ -1,4 +1,5 @@
 'use client';
+import { cadPathPoints } from '@/engine/cadPath';
 import React, { useRef, useState, useCallback, useEffect, useMemo } from 'react';
 import { visibleViewportBounds } from '@/engine/viewport';
 import { draftInRect, dimensionGeometry, drawingEntityPoints, clipCadConstruction } from '@/engine/cad';
@@ -476,8 +477,9 @@ export default function Canvas({ store, showGrid, osnap, osnapLabels = true, vie
   }, [cadActive, store.project.components, store.project.drawingEntities]);
   const cadMousePoint = (clientX: number, clientY: number): Point => {
     const world = svgToWorld(clientX, clientY);
-    if (!osnap) return world;
     const tolerance = SNAP_APERTURE_PX / getViewTransform().scale;
+    if (cad?.pathStart && Math.hypot(world.x - cad.pathStart.x, world.y - cad.pathStart.y) <= tolerance) return cad.pathStart;
+    if (!osnap) return world;
     let best = world, distance = tolerance;
     const consider = (p: Point) => { const d = Math.hypot(p.x - world.x, p.y - world.y); if (d < distance) { distance = d; best = p; } };
     cadSnapGeometry.rings.forEach(points => points.forEach((p, i) => {
@@ -541,7 +543,7 @@ export default function Canvas({ store, showGrid, osnap, osnapLabels = true, vie
           {(store.project.drawingEntities ?? []).map(entity => {
             const delta = draftDelta.id === entity.id ? draftDelta : { x: 0, y: 0 };
             const anchors = entity.points.map(p => ({ x: p.x + delta.x, y: p.y + delta.y }));
-            const points = ['xline', 'ray'].includes(entity.kind) ? clipCadConstruction({ ...entity, points: anchors }, { x0: visibleBounds.x, y0: -visibleBounds.y - visibleBounds.h, x1: visibleBounds.x + visibleBounds.w, y1: -visibleBounds.y }) ?? [] : anchors;
+            const points = ['xline', 'ray'].includes(entity.kind) ? clipCadConstruction({ ...entity, points: anchors }, { x0: visibleBounds.x, y0: -visibleBounds.y - visibleBounds.h, x1: visibleBounds.x + visibleBounds.w, y1: -visibleBounds.y }) ?? [] : cadPathPoints({ ...entity, points: anchors });
             if (!points.length) return null;
             const color = store.selectedIds.includes(entity.id) ? '#38bdf8' : palette.axisX;
             return <g key={entity.id} onPointerDown={e => {
@@ -562,6 +564,17 @@ export default function Canvas({ store, showGrid, osnap, osnapLabels = true, vie
               </>}
             </g>;
           })}
+          {cad?.pathConfirmed && <polyline data-testid="cad-confirmed-path" pointerEvents="none" points={cad.pathConfirmed.map(p => `${p.x},${p.y}`).join(' ')} fill="none" stroke="#38bdf8" strokeWidth={pxNow * 1.5} />}
+          {cad?.pathStart && cad.hover && Math.hypot(cad.pathStart.x - cad.hover.x, cad.pathStart.y - cad.hover.y) < 1e-8 && <g pointerEvents="none" data-testid="cad-start-snap">
+            <rect x={cad.pathStart.x - pxNow * 5} y={cad.pathStart.y - pxNow * 5} width={pxNow * 10} height={pxNow * 10} fill="none" stroke="#22c55e" strokeWidth={pxNow * 2} />
+            <text transform="scale(1,-1)" x={cad.pathStart.x + pxNow * 12} y={-cad.pathStart.y + pxNow * 18} fontSize={pxNow * 11} fill="#22c55e">Endpoint (Start) · Close</text>
+          </g>}
+          {cad && cad.stretchOutline.length > 0 && <polygon data-testid="cad-stretch-area" pointerEvents="none" points={cad.stretchOutline.map(p => `${p.x},${p.y}`).join(' ')} fill="rgba(34,197,94,0.08)" stroke="#22c55e" strokeWidth={pxNow} strokeDasharray={`${pxNow * 6} ${pxNow * 4}`} />}
+          {cad?.stretchVertices.map((p, i) => <circle key={`stretch-v-${i}`} pointerEvents="none" cx={p.x} cy={p.y} r={pxNow * 3} fill="#22c55e" />)}
+          {cad?.stretchPreview && <g data-testid="cad-stretch-preview" pointerEvents="none" fill="none" stroke="#38bdf8" strokeWidth={pxNow * 2}>
+            {cad.stretchPreview.components.filter(c => c !== store.project.components.find(original => original.id === c.id)).map(c => <polygon key={c.id} points={computeComponentProps(c).outline.map(p => `${p.x},${p.y}`).join(' ')} />)}
+            {cad.stretchPreview.drawingEntities?.filter(e => e !== store.project.drawingEntities?.find(original => original.id === e.id)).map(e => <polyline key={e.id} points={drawingEntityPoints(e).map(p => `${p.x},${p.y}`).join(' ')} />)}
+          </g>}
           {cad && !cad.dimensionPreview && cad.preview.length > 0 && <polyline pointerEvents="none" points={cad.preview.map(p => `${p.x},${p.y}`).join(' ')} fill="none" stroke="#38bdf8" strokeWidth={viewBox.w * 0.0015} strokeDasharray={`${viewBox.w * 0.006} ${viewBox.w * 0.004}`} />}
           {cad?.pointInput && cad.hover && <g pointerEvents="none">
             <circle cx={cad.hover.x} cy={cad.hover.y} r={pxNow * 3} fill="none" stroke="#38bdf8" strokeWidth={pxNow} />

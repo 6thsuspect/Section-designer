@@ -1,3 +1,4 @@
+import { isClosedCadPath, uniqueCadVertices } from './cadPath';
 import { dimensionGeometry, drawingEntityPoints } from './cad';
 import { exportMidasMCT } from './midasMct';
 import type { SectionProject, SectionProperties, CalcTrace, SectionFileFormat, SectionComponent, Point } from './types';
@@ -58,6 +59,7 @@ function validateDraftingEntities(project: SectionProject): void {
   const ids = new Set(project.components.map(c => c.id));
   for (const entity of project.drawingEntities) {
     if (!entity || typeof entity.id !== 'string' || ids.has(entity.id) || !['line', 'polyline', 'arc', 'point', 'dimension', 'text', 'xline', 'ray'].includes(entity.kind) || !Array.isArray(entity.points) || entity.points.length < (['point', 'text'].includes(entity.kind) ? 1 : 2) || entity.points.some(p => !p || !Number.isFinite(p.x) || !Number.isFinite(p.y))) throw new Error('Invalid CAD path or duplicate object ID.');
+    if (entity.closed !== undefined && (typeof entity.closed !== 'boolean' || entity.kind !== 'polyline' || (entity.closed && uniqueCadVertices(entity.points).length < 3))) throw new Error('Invalid CAD closure metadata.');
     if (entity.kind === 'dimension' && (entity.points.length !== 3 || !['linear', 'aligned'].includes(entity.dimensionStyle ?? '') || (entity.dimensionStyle === 'linear' && (!entity.dimensionAxis || !Number.isFinite(entity.dimensionAxis.x) || !Number.isFinite(entity.dimensionAxis.y) || Math.abs(Math.hypot(entity.dimensionAxis.x, entity.dimensionAxis.y) - 1) > 1e-6)) || Math.hypot(entity.points[1].x - entity.points[0].x, entity.points[1].y - entity.points[0].y) < 1e-10)) throw new Error('Invalid CAD dimension.');
     if (['xline', 'ray'].includes(entity.kind) && (entity.points.length !== 2 || Math.hypot(entity.points[1].x - entity.points[0].x, entity.points[1].y - entity.points[0].y) < 1e-10)) throw new Error('Invalid construction line.');
     if (entity.kind === 'text' && (entity.points.length !== 1 || typeof entity.text !== 'string' || !entity.text.trim() || entity.text.length > 10000 || /[\x00-\x08\x0B-\x1F]/.test(entity.text) || !Number.isFinite(entity.textHeight) || entity.textHeight! <= 0 || !Number.isFinite(entity.textRotation ?? 0))) throw new Error('Invalid CAD text.');
@@ -337,7 +339,7 @@ export function exportDXF(project: SectionProject, props: SectionProperties): st
     } else if (entity.kind === 'point') {
       const p = entity.points[0];
       dxf += `0\nPOINT\n8\nDRAFT\n10\n${p.x}\n20\n${p.y}\n30\n0\n`;
-    } else dxf += generateDXFPolyline(entity.points, 'DRAFT', false);
+    } else dxf += generateDXFPolyline(isClosedCadPath(entity) ? uniqueCadVertices(entity.points) : entity.points, 'DRAFT', isClosedCadPath(entity));
   }
 
   // Guard: fully degenerate geometry still produces a valid (empty) DXF

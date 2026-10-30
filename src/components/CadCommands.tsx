@@ -1,4 +1,11 @@
 'use client';
+import { isClosedCadPath, uniqueCadVertices, sameCadPoint } from '@/engine/cadPath';
+import {
+  inStretchArea,
+  stretchAreaPoints,
+  validateStretchPolygon,
+  type CadStretchArea,
+} from '@/engine/cadStretchArea';
 import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { StoreState } from '@/store/useStore';
 import type { Point } from '@/engine/types';
@@ -8,6 +15,7 @@ import {
   cadPrompt,
   parseCadValue,
   cadCreate,
+  cadSectionBoundary,
   transformCadSelection,
   cadAllPoints,
   arcPoints,
@@ -63,8 +71,11 @@ export function useCad(options: CadOptions) {
     log('Command cancelled; incomplete geometry discarded.');
   };
   const commit = (project: StoreState['project']) =>
-    current.current.store.setProject({ ...project, updatedAt: new Date().toISOString() });
-  const execute = (name: string, values: CadValue[], close = false) => {
+    current.current.store.setProject({
+      ...project,
+      updatedAt: new Date().toISOString(),
+    });
+  const execute = (name: string, values: CadValue[], close = false, area?: CadStretchArea) => {
     const o = current.current,
       s = o.store,
       p = s.project;
@@ -87,7 +98,7 @@ export function useCad(options: CadOptions) {
       ].includes(name)
     )
       commit(cadCreate(p, name, values, close));
-    else if (name === 'STRETCH') commit(stretchCad(p, values));
+    else if (name === 'STRETCH') commit(stretchCad(p, values, area));
     else if (['MOVE', 'COPY', 'ROTATE', 'SCALE', 'MIRROR'].includes(name))
       commit(transformCadSelection(p, s.selectedIds, name, values));
     else if (name === 'UNDO') s.undo();
@@ -97,7 +108,9 @@ export function useCad(options: CadOptions) {
     else if (name === 'OPEN') o.open();
     else if (name === 'HELP') {
       CAD_COMMANDS.forEach((c) =>
-        log(`${c.name}${c.aliases.length ? ' (' + c.aliases.join(', ') + ')' : ''} — ${c.help}`),
+        log(
+          `${c.name}${c.aliases.length ? ' (' + c.aliases.join(', ') + ')' : ''} — ${c.help}`,
+        ),
       );
       return;
     } else if (name === 'DIST') {
@@ -158,7 +171,9 @@ export function useCad(options: CadOptions) {
       const ids = s.selectedIds;
       if (!ids.length) throw new Error('Select objects first.');
       if (p.components.some((c) => ids.includes(c.id) && (c.combinedFrom || c.parentId)))
-        throw new Error('Use the existing Delete / Delete Cutout tools for associated components.');
+        throw new Error(
+          'Use the existing Delete / Delete Cutout tools for associated components.',
+        );
       commit({
         ...p,
         components: p.components.filter((c) => !ids.includes(c.id) || c.locked),
@@ -168,15 +183,19 @@ export function useCad(options: CadOptions) {
     } else if (name === 'BOUNDARY') {
       const selected = drafts.filter((e) => s.selectedIds.includes(e.id));
       if (selected.length !== 1) throw new Error('Select exactly one closed draft polyline.');
-      const pts = selected[0].points,
-        first = pts[0],
-        last = pts[pts.length - 1];
-      if (pts.length < 4 || first.x !== last.x || first.y !== last.y)
+      const pts = selected[0].points;
+      if (
+        !isClosedCadPath(selected[0]) &&
+        !(pts.length >= 4 && sameCadPoint(pts[0], pts.at(-1)!))
+      )
         throw new Error('Selected draft path must be closed.');
-      const points = pts.slice(0, -1);
+      const points = uniqueCadVertices(pts);
       // Reuse closed-polyline validation before committing.
-      const next = cadCreate(p, 'PLINE', points, true);
-      commit({ ...next, drawingEntities: drafts.filter((e) => e.id !== selected[0].id) });
+      const next = cadSectionBoundary(p, points);
+      commit({
+        ...next,
+        drawingEntities: drafts.filter((e) => e.id !== selected[0].id),
+      });
     } else if (name === 'LIST' || name === 'AREA') {
       const comps = p.components.filter((c) => s.selectedIds.includes(c.id));
       const selected = drafts.filter((c) => s.selectedIds.includes(c.id));
@@ -218,8 +237,14 @@ export function useCad(options: CadOptions) {
           maxY = Math.max(maxY, pt.y);
         });
         const size = Math.max(maxX - minX, maxY - minY, 1) * 1.25;
-        o.setView({ x: (minX + maxX - size) / 2, y: (-minY - maxY - size) / 2, w: size, h: size });
-      } else if (['RESET', 'R'].includes(input)) o.setView({ x: -400, y: -400, w: 800, h: 800 });
+        o.setView({
+          x: (minX + maxX - size) / 2,
+          y: (-minY - maxY - size) / 2,
+          w: size,
+          h: size,
+        });
+      } else if (['RESET', 'R'].includes(input))
+        o.setView({ x: -400, y: -400, w: 800, h: 800 });
       else if (['IN', 'I', 'OUT', 'O'].includes(input)) {
         const factor = ['IN', 'I'].includes(input) ? 0.5 : 2;
         o.setView((v) => ({
@@ -278,6 +303,60 @@ export function useCad(options: CadOptions) {
           return;
         }
       }
+      if (active.command.name === 'STRETCH') {
+        if (
+          !active.values.length &&
+          !active.stretchArea &&
+          ['CP', 'CPOLYGON'].includes(text.toUpperCase())
+        ) {
+          const next: CadSession = {
+            ...active,
+            stretchPolygon: true,
+            command: {
+              ...active.command,
+              prompts: [
+                'First crossing-polygon vertex:',
+                'Next polygon vertex or [Undo] (Enter closes selection):',
+              ],
+              types: ['point', 'point'],
+            },
+          };
+          setSession(next);
+          sessionRef.current = next;
+          log(cadPrompt(next));
+          return;
+        }
+        if (active.stretchPolygon && !active.stretchArea) {
+          if (['U', 'UNDO'].includes(text.toUpperCase())) {
+            const next = { ...active, values: active.values.slice(0, -1) };
+            setSession(next);
+            sessionRef.current = next;
+            return;
+          }
+          if (!text || ['C', 'CLOSE'].includes(text.toUpperCase())) {
+            const points = active.values as Point[];
+            validateStretchPolygon(points);
+            const next: CadSession = {
+              ...active,
+              values: [],
+              stretchArea: { kind: 'polygon', points },
+              command: {
+                ...active.command,
+                prompts: ['Base point:', 'Second point (or @dx,dy displacement):'],
+                types: ['point', 'point'],
+              },
+            };
+            setSession(next);
+            sessionRef.current = next;
+            setHover(null);
+            log(cadPrompt(next));
+            return;
+          }
+        } else if (!active.values.length && ['C', 'CROSSING'].includes(text.toUpperCase())) {
+          log('First crossing-window corner:');
+          return;
+        }
+      }
       const path = ['LINE', 'PLINE', 'SPLINE'].includes(active.command.name);
       if (path && ['UNDO', 'U'].includes(text.toUpperCase())) {
         const next = { ...active, values: active.values.slice(0, -1) };
@@ -299,8 +378,9 @@ export function useCad(options: CadOptions) {
       const lastPoint = active.values.filter((v) => typeof v === 'object').at(-1) as
         Point | undefined;
       if (
-        active.command.types[Math.min(active.values.length, active.command.types.length - 1)] ===
-          'point' &&
+        active.command.types[
+          Math.min(active.values.length, active.command.types.length - 1)
+        ] === 'point' &&
         lastPoint &&
         hover &&
         !/[,<@#]/.test(text)
@@ -310,7 +390,9 @@ export function useCad(options: CadOptions) {
           dy = hover.y - lastPoint.y,
           distance = Math.hypot(dx, dy);
         if (distance < 1e-10)
-          throw new Error('Move the cursor to specify a direction before direct-distance input.');
+          throw new Error(
+            'Move the cursor to specify a direction before direct-distance input.',
+          );
         pointText = `${lastPoint.x + (dx * length) / distance},${lastPoint.y + (dy * length) / distance}`;
       }
       const value = parseCadValue(active, pointText, current.current.store.project.units);
@@ -330,9 +412,29 @@ export function useCad(options: CadOptions) {
         log(cadPrompt(next));
         return;
       }
+      if (path && typeof value === 'object') {
+        const pts = active.values as Point[];
+        if (pts.length && sameCadPoint(pts.at(-1)!, value))
+          throw new Error('Consecutive points must differ.');
+        if (
+          active.command.name !== 'SPLINE' &&
+          pts.length >= 2 &&
+          sameCadPoint(pts[0], value)
+        ) {
+          execute(active.command.name, pts, true);
+          setSession(null);
+          sessionRef.current = null;
+          setHover(null);
+          return;
+        }
+      }
       const values = [...active.values, value];
-      if (!path && values.length === active.command.prompts.length) {
-        execute(active.command.name, values);
+      if (
+        !path &&
+        !(active.stretchPolygon && !active.stretchArea) &&
+        values.length === active.command.prompts.length
+      ) {
+        execute(active.command.name, values, false, active.stretchArea);
         setSession(null);
         sessionRef.current = null;
         setHover(null);
@@ -346,14 +448,31 @@ export function useCad(options: CadOptions) {
       log(error instanceof Error ? error.message : String(error), 'error');
     }
   };
+  const escape = () => {
+    const active = sessionRef.current;
+    if (
+      active &&
+      ['LINE', 'PLINE'].includes(active.command.name) &&
+      active.values.length >= 2
+    ) {
+      try {
+        execute(active.command.name, active.values);
+        setSession(null);
+        sessionRef.current = null;
+        setHover(null);
+      } catch (error) {
+        log(error instanceof Error ? error.message : String(error), 'error');
+      }
+    } else cancel();
+  };
   const run = (text: string) => {
     if (sessionRef.current) cancel();
     submit(text);
     inputRef.current?.focus();
   };
-  const api = useRef({ submit, cancel, execute });
+  const api = useRef({ submit, cancel, execute, escape });
   useLayoutEffect(() => {
-    api.current = { submit, cancel, execute };
+    api.current = { submit, cancel, execute, escape };
   });
   useEffect(() => {
     if (!options.enabled) return;
@@ -394,7 +513,7 @@ export function useCad(options: CadOptions) {
       } else if (e.key === 'Escape' && sessionRef.current && !inCad) {
         e.preventDefault();
         e.stopImmediatePropagation();
-        api.current.cancel();
+        api.current.escape();
       } else if (!editing && !e.ctrlKey && !e.metaKey && !e.altKey && /^[a-z]$/i.test(e.key)) {
         inputRef.current?.focus();
       }
@@ -411,11 +530,20 @@ export function useCad(options: CadOptions) {
   const pointInput =
     radiusInput ||
     (!!session &&
-      session.command.types[Math.min(session.values.length, session.command.types.length - 1)] ===
-        'point');
+      session.command.types[
+        Math.min(session.values.length, session.command.types.length - 1)
+      ] === 'point');
+  const pathStart =
+    session && ['LINE', 'PLINE'].includes(session.command.name) && session.values.length >= 3
+      ? (session.values[0] as Point)
+      : null;
   const constrain = (p: Point) => {
+    if (pathStart && sameCadPoint(pathStart, p)) return pathStart;
     let pt = snap
-      ? { x: Math.round(p.x / spacing) * spacing, y: Math.round(p.y / spacing) * spacing }
+      ? {
+          x: Math.round(p.x / spacing) * spacing,
+          y: Math.round(p.y / spacing) * spacing,
+        }
       : p;
     if (base && (ortho || polar)) {
       const dx = pt.x - base.x,
@@ -425,12 +553,16 @@ export function useCad(options: CadOptions) {
       else {
         const r = Math.hypot(dx, dy),
           angle = (Math.round(Math.atan2(dy, dx) / (Math.PI / 4)) * Math.PI) / 4;
-        pt = { x: base.x + r * Math.cos(angle), y: base.y + r * Math.sin(angle) };
+        pt = {
+          x: base.x + r * Math.cos(angle),
+          y: base.y + r * Math.sin(angle),
+        };
       }
     }
     return pt;
   };
-  let preview: Point[] = (session?.values.filter((v) => typeof v === 'object') as Point[]) ?? [];
+  let preview: Point[] =
+    (session?.values.filter((v) => typeof v === 'object') as Point[]) ?? [];
   if (pointInput && hover) {
     if (session?.command.name === 'RECTANGLE' && base)
       preview = [base, { x: hover.x, y: base.y }, hover, { x: base.x, y: hover.y }, base];
@@ -443,7 +575,11 @@ export function useCad(options: CadOptions) {
             : (session.values[1] as number)
           : Math.hypot(hover.x - base.x, hover.y - base.y);
       const ry =
-        name === 'ELLIPSE' ? (session.values.length === 1 ? rx : Math.abs(hover.y - base.y)) : rx;
+        name === 'ELLIPSE'
+          ? session.values.length === 1
+            ? rx
+            : Math.abs(hover.y - base.y)
+          : rx;
       const count = name === 'POLYGON' ? (session.values[0] as number) : 64;
       preview = Array.from({ length: count + 1 }, (_, i) => ({
         x: base.x + rx * Math.cos((i * 2 * Math.PI) / count),
@@ -464,6 +600,49 @@ export function useCad(options: CadOptions) {
       /* Keep the last valid fit preview. */
     }
   }
+  const pathConfirmed =
+    session && ['LINE', 'PLINE'].includes(session.command.name)
+      ? (session.values as Point[])
+      : [];
+  if (pathConfirmed.length) preview = hover ? [pathConfirmed.at(-1)!, hover] : [];
+  let stretchArea: CadStretchArea | undefined;
+  let stretchPreview: StoreState['project'] | null = null;
+  let stretchError = '';
+  if (session?.command.name === 'STRETCH') {
+    stretchArea = session.stretchArea;
+    if (!stretchArea && !session.stretchPolygon && session.values.length >= 2)
+      stretchArea = {
+        kind: 'window',
+        a: session.values[0] as Point,
+        b: session.values[1] as Point,
+      };
+    if (!stretchArea && !session.stretchPolygon && session.values.length === 1 && hover)
+      stretchArea = { kind: 'window', a: session.values[0] as Point, b: hover };
+    const baseIndex = session.stretchArea ? 0 : 2;
+    if (stretchArea && session.values.length === baseIndex + 1 && hover) {
+      try {
+        stretchPreview = stretchCad(
+          options.store.project,
+          [session.values[baseIndex], hover],
+          stretchArea,
+        );
+      } catch (error) {
+        stretchError = error instanceof Error ? error.message : String(error);
+      }
+    }
+    preview =
+      session.stretchPolygon && !session.stretchArea
+        ? [...(session.values as Point[]), ...(hover ? [hover] : [])]
+        : [];
+  }
+  const stretchVertices = stretchArea
+    ? [
+        ...options.store.project.components
+          .filter((c) => c.visible && !c.locked)
+          .flatMap((c) => computeComponentProps(c).outline),
+        ...(options.store.project.drawingEntities ?? []).flatMap((e) => e.points),
+      ].filter((p) => inStretchArea(p, stretchArea!))
+    : [];
   let dimensionPreview = null;
   if (
     session &&
@@ -484,6 +663,14 @@ export function useCad(options: CadOptions) {
   }
   return {
     dimensionPreview,
+    pathStart,
+    pathConfirmed,
+    stretchPreview,
+    stretchArea,
+    stretchVertices,
+    stretchError,
+    stretchOutline: stretchArea ? stretchAreaPoints(stretchArea) : [],
+    escape,
     session,
     history,
     setHistory,
@@ -556,7 +743,10 @@ export function CadPanel({ cad, options }: { cad: CadApi; options: CadOptions })
       <div
         data-cad-ui
         className="flex items-center gap-1 px-2 py-1 border-y flex-wrap shrink-0"
-        style={{ background: 'var(--bg-secondary)', borderColor: 'var(--border)' }}
+        style={{
+          background: 'var(--bg-secondary)',
+          borderColor: 'var(--border)',
+        }}
       >
         <span className="text-[10px] font-bold mr-1">CAD</span>
         {[
@@ -657,7 +847,10 @@ export function CadPanel({ cad, options }: { cad: CadApi; options: CadOptions })
               element.setPointerCapture(e.pointerId);
               element.onpointermove = (event) =>
                 setHeight(
-                  Math.max(110, Math.min(window.innerHeight * 0.55, size + start - event.clientY)),
+                  Math.max(
+                    110,
+                    Math.min(window.innerHeight * 0.55, size + start - event.clientY),
+                  ),
                 );
               element.onpointerup = () => {
                 element.onpointermove = null;
@@ -721,7 +914,10 @@ export function CadPanel({ cad, options }: { cad: CadApi; options: CadOptions })
                   role="listbox"
                   aria-label="Command suggestions"
                   className="absolute bottom-full left-2 right-2 max-h-56 overflow-auto rounded border shadow-xl z-50 py-1"
-                  style={{ background: 'var(--bg-secondary)', borderColor: 'var(--border)' }}
+                  style={{
+                    background: 'var(--bg-secondary)',
+                    borderColor: 'var(--border)',
+                  }}
                 >
                   {suggestions.map((command, i) => (
                     <button
@@ -733,7 +929,9 @@ export function CadPanel({ cad, options }: { cad: CadApi; options: CadOptions })
                       className="w-full px-3 py-1.5 text-left flex flex-col gap-0.5"
                       style={{
                         background:
-                          i === Math.max(0, activeSuggestion) ? 'var(--bg-tertiary)' : undefined,
+                          i === Math.max(0, activeSuggestion)
+                            ? 'var(--bg-tertiary)'
+                            : undefined,
                       }}
                       onMouseDown={(e) => e.preventDefault()}
                       onMouseEnter={() => setActiveSuggestion(i)}
@@ -755,6 +953,11 @@ export function CadPanel({ cad, options }: { cad: CadApi; options: CadOptions })
                   ))}
                 </div>
               )}
+              {cad.stretchError && (
+                <div role="status" className="text-[10px] text-amber-400">
+                  {cad.stretchError}
+                </div>
+              )}
               <label className="block text-[10px]" htmlFor="cad-command-input">
                 {activeSession ? cadPrompt(activeSession) : 'Command:'}
               </label>
@@ -768,7 +971,9 @@ export function CadPanel({ cad, options }: { cad: CadApi; options: CadOptions })
                 aria-expanded={suggestions.length > 0}
                 aria-controls="cad-command-suggestions"
                 aria-activedescendant={
-                  suggestions.length ? `cad-suggestion-${Math.max(0, activeSuggestion)}` : undefined
+                  suggestions.length
+                    ? `cad-suggestion-${Math.max(0, activeSuggestion)}`
+                    : undefined
                 }
                 spellCheck={false}
                 className="w-full bg-transparent outline-none"
@@ -832,7 +1037,7 @@ export function CadPanel({ cad, options }: { cad: CadApi; options: CadOptions })
                   }
                   if (e.key === 'Escape') {
                     e.preventDefault();
-                    cad.cancel();
+                    cad.escape();
                     setText('');
                   }
                 }}
