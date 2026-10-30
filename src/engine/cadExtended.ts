@@ -1,3 +1,4 @@
+import { synchronizeCadRegions } from './cadRegion';
 import { cadPathPoints, isClosedCadPath, uniqueCadVertices } from './cadPath';
 import { validateStretchPolygon } from './cadStretchArea';
 import { computeComponentProps } from './geometry';
@@ -673,7 +674,7 @@ export function executeCadExtended(
     )
   )
     throw new Error('Operation exceeds the supported coordinate range (±1e12).');
-  return next;
+  return synchronizeCadRegions(next);
 }
 export const isExtendedCadCommand = (name: string) =>
   CAD_EXTENDED_COMMANDS.some((c) => c.name === name);

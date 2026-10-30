@@ -10,7 +10,7 @@ export function uniqueCadVertices(points: Point[]): Point[] {
 /** Legacy repeated-endpoint paths remain readable; new closed paths store unique vertices. */
 export function isClosedCadPath(entity: DrawingEntity): boolean {
   return (
-    entity.kind === 'polyline' &&
+    ['line', 'polyline'].includes(entity.kind) &&
     (entity.closed === true ||
       (entity.points.length > 2 && sameCadPoint(entity.points[0], entity.points.at(-1)!)))
   );

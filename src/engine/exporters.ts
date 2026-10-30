@@ -1,3 +1,5 @@
+import { componentRegion } from './combine';
+import { cadRegion, synchronizeCadRegions, triangulateCadRegion } from './cadRegion';
 import { isClosedCadPath, uniqueCadVertices } from './cadPath';
 import { dimensionGeometry, drawingEntityPoints } from './cad';
 import { exportMidasMCT } from './midasMct';
@@ -19,7 +21,7 @@ export function createSectionFile(project: SectionProject): SectionFileFormat {
     application: APP_NAME,
     applicationVersion: APP_VERSION,
     exportedAt: new Date().toISOString(),
-    project,
+    project: synchronizeCadRegions(project),
   };
 }
 
@@ -59,7 +61,7 @@ function validateDraftingEntities(project: SectionProject): void {
   const ids = new Set(project.components.map(c => c.id));
   for (const entity of project.drawingEntities) {
     if (!entity || typeof entity.id !== 'string' || ids.has(entity.id) || !['line', 'polyline', 'arc', 'point', 'dimension', 'text', 'xline', 'ray'].includes(entity.kind) || !Array.isArray(entity.points) || entity.points.length < (['point', 'text'].includes(entity.kind) ? 1 : 2) || entity.points.some(p => !p || !Number.isFinite(p.x) || !Number.isFinite(p.y))) throw new Error('Invalid CAD path or duplicate object ID.');
-    if (entity.closed !== undefined && (typeof entity.closed !== 'boolean' || entity.kind !== 'polyline' || (entity.closed && uniqueCadVertices(entity.points).length < 3))) throw new Error('Invalid CAD closure metadata.');
+    if (entity.closed !== undefined && (typeof entity.closed !== 'boolean' || !['line', 'polyline'].includes(entity.kind) || (entity.closed && uniqueCadVertices(entity.points).length < 3))) throw new Error('Invalid CAD closure metadata.');
     if (entity.kind === 'dimension' && (entity.points.length !== 3 || !['linear', 'aligned'].includes(entity.dimensionStyle ?? '') || (entity.dimensionStyle === 'linear' && (!entity.dimensionAxis || !Number.isFinite(entity.dimensionAxis.x) || !Number.isFinite(entity.dimensionAxis.y) || Math.abs(Math.hypot(entity.dimensionAxis.x, entity.dimensionAxis.y) - 1) > 1e-6)) || Math.hypot(entity.points[1].x - entity.points[0].x, entity.points[1].y - entity.points[0].y) < 1e-10)) throw new Error('Invalid CAD dimension.');
     if (['xline', 'ray'].includes(entity.kind) && (entity.points.length !== 2 || Math.hypot(entity.points[1].x - entity.points[0].x, entity.points[1].y - entity.points[0].y) < 1e-10)) throw new Error('Invalid construction line.');
     if (entity.kind === 'text' && (entity.points.length !== 1 || typeof entity.text !== 'string' || !entity.text.trim() || entity.text.length > 10000 || /[\x00-\x08\x0B-\x1F]/.test(entity.text) || !Number.isFinite(entity.textHeight) || entity.textHeight! <= 0 || !Number.isFinite(entity.textRotation ?? 0))) throw new Error('Invalid CAD text.');
@@ -105,14 +107,14 @@ export function validateAndImportJSON(jsonString: string): ImportResult {
       }
 
       validateDraftingEntities(project);
-      return { success: true, project, warnings: warnings.length > 0 ? warnings : undefined };
+      return { success: true, project: synchronizeCadRegions(project), warnings: warnings.length > 0 ? warnings : undefined };
     }
 
     // Legacy format (direct project)
     if (data.components && Array.isArray(data.components)) {
       validateDraftingEntities(data as SectionProject);
       warnings.push('This is a legacy file format. Consider re-exporting in the new format.');
-      return { success: true, project: data as SectionProject, warnings };
+      return { success: true, project: synchronizeCadRegions(data as SectionProject), warnings };
     }
 
     return { success: false, error: 'Unrecognized file format.' };
@@ -197,6 +199,7 @@ export function downloadCSV(props: SectionProperties, project: SectionProject): 
 type DXFColor = number;
 
 const DXF_LAYERS: { name: string; color: DXFColor; linetype: string }[] = [
+  { name: 'SD_REGION_FILL', color: 9, linetype: 'CONTINUOUS' },
   { name: 'SECTION', color: 7, linetype: 'CONTINUOUS' },
   { name: 'CUTOUT', color: 1, linetype: 'CONTINUOUS' },
   { name: 'DIMENSIONS', color: 3, linetype: 'CONTINUOUS' },
@@ -213,6 +216,7 @@ function generateDXFHeader(minX: number, minY: number, maxX: number, maxY: numbe
   let s = '';
   s += dxfPair(0, 'SECTION') + dxfPair(2, 'HEADER');
   s += dxfPair(9, '$ACADVER') + dxfPair(1, 'AC1009');
+  s += dxfPair(9, '$FILLMODE') + dxfPair(70, 1);
   s += dxfPair(9, '$INSBASE') + dxfPair(10, '0.0') + dxfPair(20, '0.0') + dxfPair(30, '0.0');
   s += dxfPair(9, '$EXTMIN') + dxfPair(10, (minX - 1).toFixed(4)) + dxfPair(20, (minY - 1).toFixed(4)) + dxfPair(30, '0.0');
   s += dxfPair(9, '$EXTMAX') + dxfPair(10, (maxX + 1).toFixed(4)) + dxfPair(20, (maxY + 1).toFixed(4)) + dxfPair(30, '0.0');
@@ -279,6 +283,17 @@ function generateDXFFooter(): string {
   return dxfPair(0, 'ENDSEC') + dxfPair(0, 'EOF');
 }
 
+/** R12 has no HATCH; non-overlapping SOLID triangles preserve actual fill. */
+function generateDXFRegionFill(points: Point[]): string {
+  return triangulateCadRegion(points).map(triangle => {
+    let data = dxfPair(0, 'SOLID') + dxfPair(8, 'SD_REGION_FILL');
+    [...triangle, triangle[2]].forEach((p, i) => {
+      data += dxfPair(10 + i, p.x.toFixed(6)) + dxfPair(20 + i, p.y.toFixed(6)) + dxfPair(30 + i, '0.0');
+    });
+    return data;
+  }).join('');
+}
+
 export function exportDXF(project: SectionProject, props: SectionProperties): string {
   const visibleComps = project.components.filter(c => c.visible);
   const outlines = visibleComps
@@ -314,7 +329,13 @@ export function exportDXF(project: SectionProject, props: SectionProperties): st
     const outline = outlines[i];
     if (outline && outline.length >= 2) {
       const layer = comp.operation === 'subtract' ? 'CUTOUT' : 'SECTION';
-      dxf += generateDXFPolyline(outline, layer, true);
+      if (comp.geometry.rings?.length) {
+        // Export real material rings, never zero-width keyhole bridge edges.
+        for (const polygon of componentRegion(comp)) polygon.forEach((ring, index) => {
+          const ringLayer = index === 0 ? layer : comp.operation === 'subtract' ? 'SECTION' : 'CUTOUT';
+          dxf += generateDXFPolyline(ring, ringLayer, true);
+        });
+      } else dxf += generateDXFPolyline(outline, layer, true);
 
       // Add component label
       const compProps = computeComponentProps(comp);
@@ -339,7 +360,10 @@ export function exportDXF(project: SectionProject, props: SectionProperties): st
     } else if (entity.kind === 'point') {
       const p = entity.points[0];
       dxf += `0\nPOINT\n8\nDRAFT\n10\n${p.x}\n20\n${p.y}\n30\n0\n`;
-    } else dxf += generateDXFPolyline(isClosedCadPath(entity) ? uniqueCadVertices(entity.points) : entity.points, 'DRAFT', isClosedCadPath(entity));
+    } else {
+      if (cadRegion(entity)) dxf += generateDXFRegionFill(uniqueCadVertices(entity.points));
+      dxf += generateDXFPolyline(isClosedCadPath(entity) ? uniqueCadVertices(entity.points) : entity.points, 'DRAFT', isClosedCadPath(entity));
+    }
   }
 
   // Guard: fully degenerate geometry still produces a valid (empty) DXF

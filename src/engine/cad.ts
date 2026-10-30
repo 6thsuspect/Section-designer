@@ -1,3 +1,4 @@
+import { synchronizeCadRegions, validateCadRegion, type CadRegion } from './cadRegion';
 import { stretchPlateComponents } from './cadStretchGeometry';
 import { cadPathPoints, sameCadPoint } from './cadPath';
 import { inStretchArea, validateStretchPolygon, type CadStretchArea } from './cadStretchArea';
@@ -17,6 +18,7 @@ export interface DrawingEntity {
   id: string;
   kind: 'line' | 'polyline' | 'arc' | 'point' | 'dimension' | 'text' | 'xline' | 'ray';
   closed?: boolean;
+  region?: CadRegion;
   text?: string;
   textHeight?: number;
   textRotation?: number;
@@ -436,29 +438,8 @@ export function cadCreate(
       );
     if (points.some((p, i) => i > 0 && p.x === points[i - 1].x && p.y === points[i - 1].y))
       throw new Error('Consecutive points must be different.');
-    if (close && name === 'PLINE') {
-      for (let i = 0; i < points.length; i++)
-        for (let j = i + 1; j < points.length; j++) {
-          if (j === i + 1 || (i === 0 && j === points.length - 1)) continue;
-          if (
-            segmentsIntersect(
-              points[i],
-              points[(i + 1) % points.length],
-              points[j],
-              points[(j + 1) % points.length],
-            )
-          )
-            throw new Error('A section boundary must not cross or touch itself.');
-        }
-      const area = points.reduce((s, p, i) => {
-        const q = points[(i + 1) % points.length];
-        return (
-          s +
-          (p.x - points[0].x) * (q.y - points[0].y) -
-          (q.x - points[0].x) * (p.y - points[0].y)
-        );
-      }, 0);
-      if (Math.abs(area) < 1e-9) throw new Error('A closed section must have non-zero area.');
+    if (close) {
+      validateCadRegion(points);
       draft = { id: id(), kind: 'polyline', points, closed: true };
     } else
       draft = {
@@ -468,13 +449,13 @@ export function cadCreate(
         ...(name === 'PLINE' ? { closed: false } : {}),
       };
   }
-  return {
+  return synchronizeCadRegions({
     ...project,
     components: comp ? [...project.components, comp] : project.components,
     drawingEntities: draft
       ? [...(project.drawingEntities ?? []), draft]
       : project.drawingEntities,
-  };
+  });
 }
 /** Explicit engineering conversion: validate a path, then create one structural boundary. */
 export function cadSectionBoundary(project: SectionProject, points: Point[]): SectionProject {
@@ -615,6 +596,7 @@ export function transformCadSelection(
     });
     return {
       ...sectionShape(project, c.name, rings[0]),
+      ...(c.cadPathKind ? { cadPathKind: c.cadPathKind } : {}),
       id: copy ? id() : c.id,
       operation: c.operation,
       materialId: c.materialId,
@@ -675,7 +657,7 @@ export function transformCadSelection(
     drafts.some((e) => drawingEntityPoints(e).some((p) => !finite(p)))
   )
     throw new Error('Transformation exceeds the supported coordinate range (±1e12).');
-  return {
+  return synchronizeCadRegions({
     ...project,
     components: [
       ...project.components.filter((c) => copy || !selected.includes(c)),
@@ -685,7 +667,7 @@ export function transformCadSelection(
       ...(project.drawingEntities ?? []).filter((e) => copy || !selectedDrafts.includes(e)),
       ...drafts,
     ],
-  };
+  });
 }
 // Reuse true outer/inner ring geometry rather than keyhole bridge outlines.
 export const componentWorldRings = (c: SectionComponent) => componentRegion(c).flat();
@@ -859,7 +841,7 @@ export function stretchCad(
     )
   )
     throw new Error('Stretch exceeds the supported coordinate range.');
-  return { ...project, components, drawingEntities };
+  return synchronizeCadRegions({ ...project, components, drawingEntities });
 }
 
 export function makeCadDimension(

@@ -1,4 +1,6 @@
 'use client';
+import { synchronizeCadRegions } from '@/engine/cadRegion';
+import { prepareCadRegionCombine, restoreCadRegions } from '@/engine/cadRegionGrouping';
 import { useState, useCallback, useRef } from 'react';
 import { v4 as uuid } from 'uuid';
 import type { SectionComponent, SectionProject, SectionProperties, StressInput, CalcTrace, Material, LengthUnit, QAMessage, Point } from '@/engine/types';
@@ -58,6 +60,7 @@ function describeOverlapReport(report: OverlapRemovalReport, units: string): str
 
 /** Synchronize associated geometry and optionally maintain CG at (0,0). */
 function prepareProjectGeometry(project: SectionProject): SectionProject {
+  project = synchronizeCadRegions(project);
   const synchronized = synchronizeCombinedCutouts(synchronizeBoltDeductions(project.components));
   const components = project.alignCGToOrigin
     ? centerComponentsAtCG(synchronized)
@@ -324,14 +327,17 @@ export function useStore(): StoreState {
   const [overlapNotice, setOverlapNotice] = useState<string | null>(null);
 
   const combineShapes = useCallback((ids: string[]): string | null => {
-    const outcome = combineComponents(project.components, ids, uuid());
+    let source: SectionProject;
+    try { source = prepareCadRegionCombine(project, ids); }
+    catch (error) { return error instanceof Error ? error.message : String(error); }
+    const outcome = combineComponents(source.components, ids, uuid());
     if (!outcome.ok) return outcome.error;
     setOverlapNotice(describeOverlapReport(outcome.report, project.units));
-    updateProjectAndRecalc(p => ({ ...p, components: outcome.components }));
+    updateProjectAndRecalc(() => ({ ...source, components: outcome.components }));
     setSelectedIds([outcome.combinedId]);
     setSelectedComponentId(outcome.combinedId);
     return null;
-  }, [project.components, project.units, updateProjectAndRecalc]);
+  }, [project, updateProjectAndRecalc]);
 
   const removeOverlap = useCallback((id: string): string | null => {
     const outcome = removeOverlappingPortion(project.components, id);
@@ -346,12 +352,15 @@ export function useStore(): StoreState {
   const uncombineShape = useCallback((id: string): string | null => {
     const outcome = uncombineComponent(project.components, id);
     if (!outcome.ok) return outcome.error;
+    let restored: SectionProject;
+    try { restored = restoreCadRegions({ ...project, components: outcome.components }); }
+    catch (error) { return error instanceof Error ? error.message : String(error); }
     setOverlapNotice(null);
-    updateProjectAndRecalc(p => ({ ...p, components: outcome.components }));
+    updateProjectAndRecalc(() => restored);
     setSelectedIds(outcome.restoredIds);
     setSelectedComponentId(outcome.restoredIds[outcome.restoredIds.length - 1] ?? null);
     return null;
-  }, [project.components, updateProjectAndRecalc]);
+  }, [project, updateProjectAndRecalc]);
 
   const selectVoid = useCallback((combinedId: string, index: number) => {
     setSelectedComponentId(combinedId);

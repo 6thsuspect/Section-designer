@@ -197,3 +197,38 @@ groups, transforms, serialization, independent edits after Uncombine, regrouping
 non-destructive preview/cancel, and the real store's atomic Undo/Redo through
 STRETCH and Uncombine. These are geometry and jsdom controller/store tests, not
 a real-browser performance or visual audit.
+
+## Automatic filled closed regions
+
+LINE/PLINE closure now uses the same validated simple-polygon region path. A
+closed LINE sequence is converted to one closed polyline, retaining its exact
+boundary without a duplicate terminal vertex. `DrawingEntity.region` stores only
+solid-fill style and derived area; it does not duplicate vertex geometry or add
+a second geometry engine. SVG uses the existing theme fill and boundary, and AREA/
+LIST exposes the geometric area. Open/invalid loops are not filled. Legacy closed
+paths are validated before recognition; imported/cached area numbers are recomputed.
+
+A shared region synchronizer refreshes metadata after the pure CAD operations,
+direct canvas/store edits and persistence. TRIM/EXPLODE remove fill when the path
+opens; JOIN creates a filled region when separate connected segments close. The
+existing Combine model accepts filled paths by retaining source IDs and one
+provenance tag. Uncombine restores those paths from the latest source-plate
+coordinates, preserving their fill and future OFFSET/TRIM/editing capability.
+CAD-region area is geometric, not silently added to structural stiffness; BOUNDARY
+or an explicit Combine remains the engineering conversion step.
+
+The existing R12 DXF format is preserved. Ear clipping exports actual SOLID fill
+triangles alongside the closed POLYLINE, rather than an unsupported R12 HATCH.
+The importer ignores only our redundant fill-triangle layer and reads the closed
+boundary once. Compound section exports use real outer/void rings rather than
+keyhole bridges so valid holes survive strict closed-boundary validation. The
+importer also validates paired bridge edges and simple component rings in legacy
+keyhole-encoded files rather than rejecting valid historical exports.
+
+`verify-cad-regions.mts` covers winding, rectangles/triangles/trapezoids/concave and
+star polygons, exact closure, area synchronization, invalid loops, all existing
+path transforms/offset/trim/join/explode, grouping round trips, JSON and DXF fill/
+void round trips. Full-page jsdom tests verify actual SVG fills, selection color,
+AREA reporting, non-destructive STRETCH fill previews, Undo/Redo, TRIM opening,
+and Combine → STRETCH → Uncombine → independent edit. Existing grouped-plate,
+ORTHO and selection-overlay regression suites are unchanged and remain required.

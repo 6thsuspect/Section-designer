@@ -9,7 +9,7 @@
     "typecheck": "tsc --noEmit",
     "test:engineering": "node --experimental-strip-types --import ./scripts/ts-resolve.mjs scripts/verify-properties.mts",
     "test:midas": "node --experimental-strip-types --import ./scripts/ts-resolve.mjs scripts/verify-midas.mts",
-    "test:cad": "tsx scripts/verify-cad.mts && tsx scripts/verify-cad-extended.mts && tsx scripts/verify-cad-grouped-stretch.mts && tsx scripts/verify-cad-ui.tsx && tsx scripts/verify-cad-grouped-ui.tsx",
+    "test:cad": "tsx scripts/verify-cad.mts && tsx scripts/verify-cad-extended.mts && tsx scripts/verify-cad-grouped-stretch.mts && tsx scripts/verify-cad-regions.mts && tsx scripts/verify-cad-ui.tsx && tsx scripts/verify-cad-grouped-ui.tsx",
     "inventory:cadcraft": "tsx scripts/inventory-cadcraft.mts"
   },
   "dependencies": {

@@ -1,4 +1,5 @@
 'use client';
+import { cadRegion } from '@/engine/cadRegion';
 import { stretchComponentVertices } from '@/engine/cadStretchGeometry';
 import { isClosedCadPath, uniqueCadVertices, sameCadPoint } from '@/engine/cadPath';
 import {
@@ -217,7 +218,9 @@ export function useCad(options: CadOptions) {
         log(
           e.kind === 'dimension'
             ? `${e.dimensionStyle} dimension [${e.id}]: ${dimensionGeometry(e).label} ${p.units}; non-associative annotation, no section area.`
-            : `${e.kind} [${e.id}] ${e.points.length} vertices; drafting geometry, no section area.`,
+            : cadRegion(e)
+              ? `Closed polyline [${e.id}]: area=${cadRegion(e)!.area.toPrecision(10)} ${p.units}²; solid CAD region, ${e.points.length} boundary vertices.`
+              : `${e.kind} [${e.id}] ${e.points.length} vertices; drafting geometry, no section area.`,
           'success',
         ),
       );

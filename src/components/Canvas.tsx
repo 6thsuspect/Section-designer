@@ -1,4 +1,5 @@
 'use client';
+import { cadRegion, synchronizeCadRegion } from '@/engine/cadRegion';
 import { cadPathPoints } from '@/engine/cadPath';
 import React, { useRef, useState, useCallback, useEffect, useMemo } from 'react';
 import { visibleViewportBounds } from '@/engine/viewport';
@@ -322,7 +323,7 @@ export default function Canvas({ store, showGrid, osnap, osnapLabels = true, vie
       const { id, delta } = draftDrag.current;
       draftDrag.current = null; setDraftDelta({ x: 0, y: 0 });
       if (svgRef.current?.hasPointerCapture(e.pointerId)) svgRef.current.releasePointerCapture(e.pointerId);
-      if (e.type !== 'pointercancel' && (delta.x || delta.y)) store.setProject({ ...store.project, drawingEntities: store.project.drawingEntities?.map(entity => entity.id !== id ? entity : { ...entity, points: entity.points.map(p => ({ x: p.x + delta.x, y: p.y + delta.y })) }) });
+      if (e.type !== 'pointercancel' && (delta.x || delta.y)) store.setProject({ ...store.project, drawingEntities: store.project.drawingEntities?.map(entity => entity.id !== id ? entity : synchronizeCadRegion({ ...entity, points: entity.points.map(p => ({ x: p.x + delta.x, y: p.y + delta.y })) })) });
       return;
     }
     if (svgRef.current?.hasPointerCapture(e.pointerId)) {
@@ -468,6 +469,7 @@ export default function Canvas({ store, showGrid, osnap, osnapLabels = true, vie
     h: Math.abs(selRect.y1 - selRect.y0),
   } : null;
 
+  const cadFilledRegions = useMemo(() => new Map((store.project.drawingEntities ?? []).map(e => [e.id, cadRegion(e)])), [store.project.drawingEntities]);
   const cadActive = !!cad;
   const cadSnapGeometry = useMemo(() => {
     if (!cadActive) return { rings: [] as Point[][], centers: [] as Point[] };
@@ -561,6 +563,7 @@ export default function Canvas({ store, showGrid, osnap, osnapLabels = true, vie
               {entity.kind === 'text' ? <g transform={`translate(${points[0].x},${points[0].y}) rotate(${entity.textRotation ?? 0})`}>
                 <text transform="scale(1,-1)" fontSize={entity.textHeight ?? 10} fontFamily="monospace" fill={color}>{(entity.text ?? '').split('\n').map((line, i) => <tspan key={i} x={0} dy={i ? (entity.textHeight ?? 10) * 1.2 : 0}>{line || ' '}</tspan>)}</text>
               </g> : entity.kind === 'dimension' ? <CadDimension entity={{ ...entity, points }} px={pxNow} color={color} /> : entity.kind === 'point' ? <circle cx={points[0].x} cy={points[0].y} r={viewBox.w * 0.004} fill={color} /> : <>
+                {cadFilledRegions.get(entity.id) && <polygon data-testid="cad-filled-region" data-entity-id={entity.id} data-area={cadFilledRegions.get(entity.id)!.area} points={anchors.map(p => `${p.x},${p.y}`).join(' ')} fill={store.selectedIds.includes(entity.id) ? palette.previewFill : palette.addFill} stroke="none" />}
                 <polyline points={points.map(p => `${p.x},${p.y}`).join(' ')} fill="none" stroke="transparent" strokeWidth={viewBox.w * 0.012} />
                 <polyline points={points.map(p => `${p.x},${p.y}`).join(' ')} fill="none" stroke={color} strokeWidth={viewBox.w * 0.0015} pointerEvents="none" />
               </>}
@@ -575,7 +578,7 @@ export default function Canvas({ store, showGrid, osnap, osnapLabels = true, vie
           {cad?.stretchVertices.map((p, i) => <circle key={`stretch-v-${i}`} pointerEvents="none" cx={p.x} cy={p.y} r={pxNow * 3} fill="#22c55e" />)}
           {cad?.stretchPreview && <g data-testid="cad-stretch-preview" pointerEvents="none" fill="none" stroke="#38bdf8" strokeWidth={pxNow * 2}>
             {cad.stretchPreview.components.filter(c => c !== store.project.components.find(original => original.id === c.id)).map(c => <polygon key={c.id} points={computeComponentProps(c).outline.map(p => `${p.x},${p.y}`).join(' ')} />)}
-            {cad.stretchPreview.drawingEntities?.filter(e => e !== store.project.drawingEntities?.find(original => original.id === e.id)).map(e => <polyline key={e.id} points={drawingEntityPoints(e).map(p => `${p.x},${p.y}`).join(' ')} />)}
+            {cad.stretchPreview.drawingEntities?.filter(e => e !== store.project.drawingEntities?.find(original => original.id === e.id)).map(e => <g key={e.id}>{cadRegion(e) && <polygon data-testid="cad-region-preview" points={e.points.map(p => `${p.x},${p.y}`).join(' ')} fill={palette.previewFill} stroke="none" />}<polyline points={drawingEntityPoints(e).map(p => `${p.x},${p.y}`).join(' ')} /></g>)}
           </g>}
           {cad && !cad.dimensionPreview && cad.preview.length > 0 && <polyline pointerEvents="none" points={cad.preview.map(p => `${p.x},${p.y}`).join(' ')} fill="none" stroke="#38bdf8" strokeWidth={viewBox.w * 0.0015} strokeDasharray={`${viewBox.w * 0.006} ${viewBox.w * 0.004}`} />}
           {cad?.pointInput && cad.hover && <g pointerEvents="none">

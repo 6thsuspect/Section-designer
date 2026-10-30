@@ -129,15 +129,29 @@ not the boolean union of the selection.
   JSON, PDF, Excel, CSV, DXF and MIDAS exports apply normally. Self-crossing closed
   PLINE boundaries are rejected. Existing CG-origin alignment, if enabled,
   continues to control the section reference frame.
-- Lines, open/closed polylines, arcs and points are **drafting-only** entities in the same
+- Lines, open/closed polylines, arcs and points are CAD entities in the same
   project and undo snapshots. They are selectable, draggable, and command-editable,
-  including after mode changes. They contribute **no area or stiffness** and do
-  not appear in engineering reports or MIDAS boundaries. JSON/database saves
-  preserve them; DXF writes them on the DRAFT layer (arcs as polylines).
+  including after mode changes. A valid closed LINE/PLINE loop automatically
+  becomes one filled closed polyline with a stored `region: { fill: "solid", area }`.
+  AREA/LIST reports its geometric area in project units squared. Open paths and
+  invalid/self-intersecting loops are never filled. Fill uses the canvas theme;
+  the original boundary remains the snapping/editing geometry.
+  CAD regions contribute **no engineering area or stiffness** until explicitly
+  converted with BOUNDARY or Combine. JSON/database saves preserve the region;
+  DXF writes the closed boundary on DRAFT plus SOLID fill triangles on SD_REGION_FILL.
 - PLINE/PL/POLYLINE always creates one shared-model polyline entity. A closed
   path stores `closed: true` and unique vertices; rendering/snapping supplies the
   closing edge. JSON retains closure and DXF POLYLINE exports flag 70=1.
+  Closing LINE also creates one closed polyline region rather than disconnected
+  segments. JOIN recognizes a closed chain of separately created draft segments
+  and creates the same filled region. Existing valid legacy repeated-endpoint
+  paths are recognized too; self-crossing legacy paths retain only their outline.
   Existing saved closed section components are not migrated or duplicated.
+- Combine accepts valid closed CAD regions alongside existing section plates.
+  It uses the same source-plate model, preserving IDs and only a provenance tag
+  (not a duplicate drawing). Uncombine restores those sources as filled CAD paths
+  with their latest coordinates and recalculated area, so OFFSET/TRIM and other
+  draft-path commands still work afterward. Open/invalid paths cannot be combined.
 - BOUNDARY converts one selected, closed draft path into a section component.
   This explicit conversion replaces the earlier automatic PLINE-to-section step,
   preserving editable CAD paths without accidentally adding engineering area.
@@ -203,3 +217,19 @@ or a large-drawing frame-rate benchmark.
 Targeted lint passes for the new command engine, UI, tests and canvas integration.
 Full-project lint still reports pre-existing hook issues in `SaveLoadDialog.tsx`
 and `useStore.ts`, plus the existing font warning in `layout.tsx`.
+
+## Closed CAD-region fill and editing
+
+Fill and area are derived from the single canonical boundary on creation,
+transforms, STRETCH, OFFSET, JOIN, direct canvas edits and JSON load/save. TRIM or
+EXPLODE that opens a boundary removes its region metadata; it does not leave a
+stale fill. STRETCH previews the changed region without altering the original.
+Undo/Redo restores geometry, area and group provenance together.
+
+R12 DXF has no HATCH entity: filled CAD regions export non-overlapping SOLID
+triangles plus their editable closed POLYLINE and FILLMODE=1. On reimport, this
+application uses the authoritative outline and ignores only its own SD_REGION_FILL
+triangles, avoiding duplicate area. Imported closed boundaries become ordinary
+filled section components, following the existing DXF import workflow. Combined
+section holes export true outer/void rings instead of self-touching keyhole bridges;
+validated legacy bridge-encoded section files remain importable.

@@ -126,6 +126,8 @@ export interface SectionComponent {
   managedByParent?: boolean;
   /** Combined sections: authoritative source plates, updated together with grouped edits. */
   combinedFrom?: SectionComponent[];
+  /** Closed CAD-region provenance while participating in a combined section. */
+  cadPathKind?: 'polyline';
   /** World frame in which combinedFrom coordinates were last synchronized. */
   combinedSourceFrame?: { position: Point; rotation: number };
   /** Combined cut-outs: offset/rotation relative to the combined section. */

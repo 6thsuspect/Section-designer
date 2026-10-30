@@ -963,6 +963,128 @@ async function main() {
   );
   assert.ok(svg.querySelector('circle[fill="#22c55e"]'), 'polygon selection mask is retained');
   await escapeCad();
+  // Closed LINE and PLINE sequences are real solid regions; open paths stay unfilled.
+  await submit('ORTHO');
+  await submit('OFF');
+  await submit('PLINE');
+  for (const point of ['80000,80000', '80010,80000', '80010,80005', '80000,80005'])
+    await submit(point);
+  const regionPoints = '80000,80000 80010,80000 80010,80005 80000,80005';
+  assert.equal(
+    svg.querySelector(`polygon[points="${regionPoints}"]`),
+    null,
+    'pending open path has no fill',
+  );
+  await submit('C');
+  const regionPolygon = () =>
+    svg.querySelector(`polygon[data-testid="cad-filled-region"][points="${regionPoints}"]`)!;
+  assert.ok(regionPolygon(), 'PLINE C creates a filled region');
+  assert.equal(regionPolygon().getAttribute('data-area'), '50');
+  const regionId = regionPolygon().getAttribute('data-entity-id')!;
+  const originalFill = regionPolygon().getAttribute('fill');
+  await act(async () =>
+    regionPolygon().dispatchEvent(
+      new dom.window.MouseEvent('pointerdown', { bubbles: true, button: 0 }),
+    ),
+  );
+  await pointer('pointerup', 400, 400);
+  assert.notEqual(
+    regionPolygon().getAttribute('fill'),
+    originalFill,
+    'selected fill uses the theme selection color',
+  );
+  await submit('AREA');
+  assert.ok(
+    document.querySelector('[role="log"]')?.textContent?.includes('area=50.00000000'),
+    'region area is available in AREA/LIST',
+  );
+  await submit('LINE');
+  for (const point of [
+    '81000,81000',
+    '81010,81000',
+    '81010,81005',
+    '81000,81005',
+    '81000,81000',
+  ])
+    await submit(point);
+  assert.ok(
+    svg.querySelector(
+      'polygon[data-testid="cad-filled-region"][points="81000,81000 81010,81000 81010,81005 81000,81005"]',
+    ),
+    'LINE first-point closure creates a filled polygon',
+  );
+  await submit('LINE');
+  for (const point of ['82000,82000', '82010,82000', '82010,82005', '82000,82005'])
+    await submit(point);
+  await submit('');
+  assert.equal(
+    svg.querySelector('polygon[points="82000,82000 82010,82000 82010,82005 82000,82005"]'),
+    null,
+    'finished open LINE is not forcibly filled',
+  );
+  await submit('STRETCH');
+  for (const point of ['80009,79999', '80011,80006', '0,0']) await submit(point);
+  await pointer('pointermove', 450, 400);
+  assert.ok(
+    svg.querySelector('[data-testid="cad-region-preview"]'),
+    'displacement previews the updated region fill',
+  );
+  assert.equal(
+    regionPolygon().getAttribute('data-area'),
+    '50',
+    'preview leaves original filled region unchanged',
+  );
+  await submit('@10,0');
+  const filledById = () =>
+    svg.querySelector(`[data-testid="cad-filled-region"][data-entity-id="${regionId}"]`);
+  assert.equal(filledById()!.getAttribute('data-area'), '100');
+  await submit('UNDO');
+  assert.equal(filledById()!.getAttribute('data-area'), '50');
+  await submit('REDO');
+  assert.equal(filledById()!.getAttribute('data-area'), '100');
+  await submit('SELECT');
+  await submit('WINDOW');
+  await submit('79999,79999');
+  await submit('80021,80006');
+  await submit('TRIM');
+  await submit('80010,79999');
+  await submit('80010,80006');
+  await submit('80018,80002');
+  assert.equal(filledById(), null, 'TRIM opens the boundary and removes its fill');
+  await submit('UNDO');
+  assert.equal(filledById()!.getAttribute('data-area'), '100');
+  await submit('PLINE');
+  for (const point of ['80020,80000', '80030,80000', '80030,80005', '80020,80005'])
+    await submit(point);
+  await submit('C');
+  await submit('SELECT');
+  await submit('WINDOW');
+  await submit('79999,79999');
+  await submit('80031,80006');
+  const combineRegions = buttons().find((b) => b.textContent?.includes('Combine 2 Shapes'));
+  assert.ok(combineRegions, 'closed filled CAD entities can use the existing Combine UI');
+  await click(combineRegions!);
+  assert.equal(filledById(), null, 'grouping does not leave duplicate draft geometry');
+  assert.ok(buttons().find((b) => b.textContent?.includes('⊟ Uncombine')));
+  await submit('STRETCH');
+  for (const point of ['79999,80004', '80031,80006', '0,0', '@0,5']) await submit(point);
+  await click(buttons().find((b) => b.textContent?.includes('⊟ Uncombine'))!);
+  assert.equal(
+    filledById()!.getAttribute('data-area'),
+    '200',
+    'Uncombine restores the latest stretched filled CAD region with the original ID',
+  );
+  await submit('UNDO');
+  assert.equal(filledById(), null, 'Undo restores grouped representation atomically');
+  await submit('REDO');
+  assert.equal(filledById()!.getAttribute('data-area'), '200');
+  await submit('STRETCH');
+  for (const point of ['79999,79999', '80001,80011', '0,0', '@-5,0']) await submit(point);
+  assert.equal(
+    filledById()!.getAttribute('data-area'),
+    '250',
+    'independent boundary edits update fill and area after Uncombine',
+  );
   await act(async () => root.unmount());
   console.log(
     'CAD UI checks passed: full app mode isolation, prompts, native drawing, draft paths, invalid input recovery, modifications, undo/redo, cancellation, extents, collapse and floating.',
