@@ -21,8 +21,9 @@ import { computeComponentProps } from './geometry';
  *     splits the section, every remaining piece is joined by zero-width
  *     bridges so the coordinates still form one continuous closed loop.
  *
- * A deep snapshot of every original member is stored on the combined shape,
- * so Uncombine restores the last uncombined state exactly.
+ * Source members are stored on the combined shape. Grouped STRETCH rebuilds
+ * the material and source snapshot together; Uncombine restores these latest
+ * members in the current parent pose (untouched groups still restore exactly).
  */
 
 type ClipApi = {
@@ -331,7 +332,15 @@ export function combineComponents(
     return { ok: false, error: 'Shapes with different materials cannot be combined into one section.' };
   }
 
-  const regions = additive.flatMap(componentRegion).map(toClip);
+  // Use synchronized additive source plates for nested unions to avoid
+  // roundoff from re-expanding centroid-relative display outlines.
+  const allAdditive = (c: SectionComponent): boolean => c.operation === 'add' && (!c.combinedFrom || c.combinedFrom.every(allAdditive));
+  const materialRegions = (c: SectionComponent): Polygon[] => c.combinedFrom && c.combinedSourceFrame && allAdditive(c)
+    ? combinedMembersInWorld(c).flatMap(materialRegions)
+    : componentRegion(c).map(toClip);
+  let regions: Polygon[];
+  try { regions = additive.flatMap(materialRegions); }
+  catch (error) { return { ok: false, error: error instanceof Error ? error.message : String(error) }; }
   if (regions.length === 0) return { ok: false, error: 'The selected shapes have no area to combine.' };
   let union: MultiPolygon;
   try {
@@ -374,6 +383,7 @@ export function combineComponents(
     visible: true,
     locked: false,
     combinedFrom: clone(members),
+    combinedSourceFrame: { position: { ...center }, rotation: 0 },
   };
 
   const result: SectionComponent[] = [];
@@ -484,6 +494,8 @@ export function removeOverlappingPortion(components: SectionComponent[], combine
   }));
   const updated: SectionComponent = {
     ...combined,
+    // Parent-only edits intentionally diverge from the source snapshot.
+    combinedSourceFrame: undefined,
     geometry: { ...combined.geometry, points: keyholeAll(local), rings: local },
   };
   const cutoutIds = new Set(cutouts.map(cutout => cutout.id));
@@ -496,15 +508,90 @@ export function removeOverlappingPortion(components: SectionComponent[], combine
   };
 }
 
+/** Rebuild the visible material and source snapshot atomically from the same members. */
+export function rebuildCombinedComponent(parent: SectionComponent, members: SectionComponent[]): SectionComponent {
+  const result = combineComponents(members, members.map(c => c.id), parent.id, parent.name);
+  if (!result.ok) throw new Error(`Cannot update combined section "${parent.name}": ${result.error}`);
+  const combined = result.components.find(c => c.id === parent.id)!;
+  return { ...parent, geometry: combined.geometry, position: combined.position, rotation: 0,
+    combinedFrom: clone(members), combinedSourceFrame: combined.combinedSourceFrame };
+}
+
+/** Materialize the source plates in the current parent pose, including legacy files. */
+export function combinedMembersInWorld(combined: SectionComponent): SectionComponent[] {
+  const members = combined.combinedFrom;
+  if (!members?.length) throw new Error('Combined section has no source plates.');
+  let frame = combined.combinedSourceFrame;
+  if (!frame) {
+    // Older files stored world-space sources but no source frame. Recover their
+    // original union centroid rather than treating local points as world points.
+    const original = combineComponents(members, members.map(c => c.id), combined.id, combined.name);
+    if (!original.ok) throw new Error(`Cannot recover combined source frame: ${original.error}`);
+    frame = { position: original.components[0].position, rotation: 0 };
+  }
+  if (![frame.position.x, frame.position.y, frame.rotation, combined.position.x, combined.position.y, combined.rotation].every(Number.isFinite)) throw new Error('Invalid combined source frame.');
+  const angle = combined.rotation - frame.rotation;
+  if (!angle && combined.position.x === frame.position.x && combined.position.y === frame.position.y) return clone(members);
+  return members.map(member => {
+    const rotated = rotateAbout(member.position, angle, frame.position);
+    const position = { x: rotated.x + combined.position.x - frame.position.x, y: rotated.y + combined.position.y - frame.position.y };
+    if (angle && !member.combinedFrom && !member.geometry.boltDeductions && !member.parentId && ['rectangle', 'triangle', 'polygon', 'custom-shape'].includes(member.type)) {
+      const map = (p: Point) => {
+        const q = rotateAbout(p, angle, frame!.position);
+        return { x: q.x + combined.position.x - frame!.position.x, y: q.y + combined.position.y - frame!.position.y };
+      };
+      const rings = componentRegion(member).flat().map(ring => ring.map(map));
+      return { ...clone(member), type: 'custom-shape' as const, position: { x: 0, y: 0 }, rotation: 0,
+        geometry: { ...clone(member.geometry), points: keyholeAll(rings), rings } };
+    }
+    return { ...clone(member), position, rotation: member.rotation + angle };
+  });
+}
+
+/** Compare material, not keyhole bridge order or tessellation vertex ordering. */
+export function sameComponentMaterial(a: SectionComponent, b: SectionComponent): boolean {
+  const first = componentRegion(a).map(toClip), second = componentRegion(b).map(toClip);
+  const firstRings = componentRegion(a).flat(), secondRings = componentRegion(b).flat();
+  // Equal boundaries can differ by roundoff after world/local rotations. Avoid
+  // asking the clipping sweep to subtract almost-coincident edges in that case.
+  const covered = (source: Point[][], target: Point[][]) => source.every(ring => ring.every((p, i) => {
+    const q = ring[(i + 1) % ring.length], dx = q.x - p.x, dy = q.y - p.y;
+    const length = Math.hypot(dx, dy);
+    if (length < 1e-10) return true;
+    const intervals: [number, number][] = [];
+    for (const other of target) for (let j = 0; j < other.length; j++) {
+      const c = other[j], d = other[(j + 1) % other.length];
+      if (Math.abs(dx * (c.y - p.y) - dy * (c.x - p.x)) > 1e-7 * length ||
+        Math.abs(dx * (d.y - p.y) - dy * (d.x - p.x)) > 1e-7 * length) continue;
+      const ts = [((c.x - p.x) * dx + (c.y - p.y) * dy) / (length * length),
+        ((d.x - p.x) * dx + (d.y - p.y) * dy) / (length * length)].sort((x, y) => x - y);
+      intervals.push([Math.max(0, ts[0]), Math.min(1, ts[1])]);
+    }
+    let end = 0;
+    for (const [lo, hi] of intervals.sort((x, y) => x[0] - y[0])) {
+      if (hi < 0 || lo > 1) continue;
+      if (lo > end + 1e-7 / length) return false;
+      end = Math.max(end, hi);
+    }
+    return end >= 1 - 1e-7 / length;
+  }));
+  if (first.length === second.length && firstRings.length === secondRings.length &&
+    covered(firstRings, secondRings) && covered(secondRings, firstRings)) return true;
+  const area = Math.max(1, multiArea(first), multiArea(second));
+  return multiArea(clip.difference(first, second)) + multiArea(clip.difference(second, first)) <= area * 1e-9;
+}
+
 export type UncombineOutcome =
   | { ok: true; components: SectionComponent[]; restoredIds: string[] }
   | { ok: false; error: string };
 
-/** Restore the exact last uncombined state of a combined section. */
+/** Restore the current source geometry of a combined section in its parent pose. */
 export function uncombineComponent(components: SectionComponent[], combinedId: string): UncombineOutcome {
   const combined = components.find(component => component.id === combinedId);
   if (!combined?.combinedFrom?.length) return { ok: false, error: 'This shape is not a combined section.' };
-  const restored = clone(combined.combinedFrom);
+  let restored: SectionComponent[];
+  try { restored = combinedMembersInWorld(combined); }
+  catch (error) { return { ok: false, error: error instanceof Error ? error.message : String(error) }; }
   const restoredIds = new Set(restored.map(component => component.id));
   const result: SectionComponent[] = [];
   for (const component of components) {
@@ -595,6 +682,8 @@ export function deleteCombinedVoid(
   const remaining = rings.filter((_, index) => index !== voidPositions[voidIndex]);
   const updated: SectionComponent = {
     ...combined,
+    // Parent-only edits intentionally diverge from the source snapshot.
+    combinedSourceFrame: undefined,
     geometry: {
       ...combined.geometry,
       points: keyholeAll(remaining),

@@ -124,8 +124,12 @@ export interface SectionComponent {
   generatedIndex?: number;
   /** True while geometry is driven by the grouped parent plate. */
   managedByParent?: boolean;
-  /** Combined sections: deep snapshot of the members, restored by Uncombine. */
+  /** Combined sections: authoritative source plates, updated together with grouped edits. */
   combinedFrom?: SectionComponent[];
+  /** Closed CAD-region provenance while participating in a combined section. */
+  cadPathKind?: 'polyline';
+  /** World frame in which combinedFrom coordinates were last synchronized. */
+  combinedSourceFrame?: { position: Point; rotation: number };
   /** Combined cut-outs: offset/rotation relative to the combined section. */
   combinedOffset?: Point;
   combinedBaseRotation?: number;
@@ -210,6 +214,10 @@ export interface CalcTrace {
 }
 
 export interface SectionProject {
+  /** Non-structural CAD paths; excluded from section area/stiffness calculations. */
+  drawingEntities?: import('./cad').DrawingEntity[];
+  /** MIDAS section ID; older projects default to 1. */
+  sectionNumber?: number;
   id: string;
   name: string;
   description: string;

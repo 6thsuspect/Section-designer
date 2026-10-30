@@ -1,0 +1,3803 @@
+{
+  "repository": "https://github.com/storytold/cadcraft",
+  "revision": "f8b09e92e55e869a0c5199f9f447e487fde0aeda",
+  "note": "Static inventory of literal CommandSpec::new registrations before Rust test modules, not a runtime registry or proof of upstream functionality. Macro/dynamically generated entries may be absent. Matching native names do not imply full upstream option parity. See CADCRAFT_INTEGRATION.md.",
+  "nativeCommands": [
+    {
+      "command": "XLINE",
+      "aliases": [
+        "XL"
+      ],
+      "supportedBehavior": "Infinite construction line through two points; drafting only."
+    },
+    {
+      "command": "RAY",
+      "aliases": [],
+      "supportedBehavior": "Semi-infinite construction ray from a base through a second point; drafting only."
+    },
+    {
+      "command": "CIRCLED",
+      "aliases": [
+        "CIRCLE.CD"
+      ],
+      "supportedBehavior": "Section circle from center and diameter."
+    },
+    {
+      "command": "CIRCLE2P",
+      "aliases": [
+        "CIRCLE.2P"
+      ],
+      "supportedBehavior": "Section circle whose diameter endpoints are the two input points."
+    },
+    {
+      "command": "CIRCLE3P",
+      "aliases": [
+        "CIRCLE.3P"
+      ],
+      "supportedBehavior": "Section circle through three non-collinear points."
+    },
+    {
+      "command": "MTEXT",
+      "aliases": [
+        "T",
+        "MT"
+      ],
+      "supportedBehavior": "Plain multiline draft text; use \n separators. No rich formatting or automatic wrapping."
+    },
+    {
+      "command": "SPLINE",
+      "aliases": [
+        "SPL"
+      ],
+      "supportedBehavior": "Fit-point Catmull–Rom curve, tessellated into a draft polyline. Enter finishes; Close closes."
+    },
+    {
+      "command": "DONUT",
+      "aliases": [
+        "DO",
+        "DOUGHNUT"
+      ],
+      "supportedBehavior": "Section annulus: inner diameter, outer diameter, center. Inner diameter may be zero."
+    },
+    {
+      "command": "TEXT",
+      "aliases": [
+        "DT",
+        "DTEXT"
+      ],
+      "supportedBehavior": "Draft text: insertion, height, CCW angle and content. Quote content to type spaces."
+    },
+    {
+      "command": "OFFSET",
+      "aliases": [
+        "O"
+      ],
+      "supportedBehavior": "Preselect one draft straight line, section circle or rectangle. Offset towards a picked side; originals retained."
+    },
+    {
+      "command": "TRIM",
+      "aliases": [
+        "TR"
+      ],
+      "supportedBehavior": "Preselect one two-point draft line. Define an infinite cutting line and pick the part to remove."
+    },
+    {
+      "command": "EXTEND",
+      "aliases": [
+        "EX"
+      ],
+      "supportedBehavior": "Preselect one two-point draft line. Define an infinite boundary line, then pick target endpoint to extend."
+    },
+    {
+      "command": "FILLET",
+      "aliases": [
+        "F"
+      ],
+      "supportedBehavior": "Preselect two two-point draft lines. Radius and kept-side picks trim/extend lines and add a tessellated circular fillet."
+    },
+    {
+      "command": "CHAMFER",
+      "aliases": [
+        "CHA"
+      ],
+      "supportedBehavior": "Preselect two two-point draft lines. Distances from their intersection and kept-side picks create a chamfer."
+    },
+    {
+      "command": "JOIN",
+      "aliases": [
+        "J"
+      ],
+      "supportedBehavior": "Join selected connected, non-branching draft lines/polylines/arcs into one polyline; does not create section area."
+    },
+    {
+      "command": "EXPLODE",
+      "aliases": [
+        "X"
+      ],
+      "supportedBehavior": "Explode selected draft paths into individual straight line segments. Section components are never erased."
+    },
+    {
+      "command": "BREAK",
+      "aliases": [
+        "BR"
+      ],
+      "supportedBehavior": "Preselect one two-point draft line. Remove the interval between two points on it."
+    },
+    {
+      "command": "LENGTHEN",
+      "aliases": [
+        "LEN"
+      ],
+      "supportedBehavior": "Preselect one two-point draft line. Set total length, keeping the opposite endpoint fixed."
+    },
+    {
+      "command": "ARRAY",
+      "aliases": [
+        "AR",
+        "ARRAYRECT"
+      ],
+      "supportedBehavior": "Rectangular copies of unlocked selection. Row/column counts include originals; maximum 1000 resulting objects."
+    },
+    {
+      "command": "ARRAYPOLAR",
+      "aliases": [
+        "ARP"
+      ],
+      "supportedBehavior": "Rotating polar copies of selection: total count includes originals; sweep up to ±360 degrees."
+    },
+    {
+      "command": "OVERKILL",
+      "aliases": [],
+      "supportedBehavior": "Remove exact duplicate selected draft paths, including reversed paths. Never removes section components."
+    },
+    {
+      "command": "LINE",
+      "aliases": [
+        "L"
+      ],
+      "supportedBehavior": "Connected line segments; Enter finishes, Close closes, Undo removes last point."
+    },
+    {
+      "command": "PLINE",
+      "aliases": [
+        "PL"
+      ],
+      "supportedBehavior": "Connected polyline; Close creates a section boundary."
+    },
+    {
+      "command": "RECTANGLE",
+      "aliases": [
+        "REC",
+        "RECTANG"
+      ],
+      "supportedBehavior": "Section rectangle from opposite corners."
+    },
+    {
+      "command": "CIRCLE",
+      "aliases": [
+        "C"
+      ],
+      "supportedBehavior": "Section circle from center and radius."
+    },
+    {
+      "command": "ELLIPSE",
+      "aliases": [
+        "EL"
+      ],
+      "supportedBehavior": "Axis-aligned section ellipse: center, horizontal and vertical semi-axes."
+    },
+    {
+      "command": "POLYGON",
+      "aliases": [
+        "POL"
+      ],
+      "supportedBehavior": "Regular section polygon, inscribed in a circle; first vertex at +X."
+    },
+    {
+      "command": "ARC",
+      "aliases": [
+        "A"
+      ],
+      "supportedBehavior": "Draft arc through start, intermediate and end points."
+    },
+    {
+      "command": "POINT",
+      "aliases": [
+        "PO"
+      ],
+      "supportedBehavior": "Draft point (not included in section properties)."
+    },
+    {
+      "command": "STRETCH",
+      "aliases": [
+        "S"
+      ],
+      "supportedBehavior": "Crossing window selects vertices; specify base and destination. Partial stretch supports solid polygonal components and draft paths; fully enclosed objects move."
+    },
+    {
+      "command": "DIM",
+      "aliases": [
+        "DIMLINEAR",
+        "DLI"
+      ],
+      "supportedBehavior": "Linear dimension: two extension origins, then location (horizontal or vertical selected by location)."
+    },
+    {
+      "command": "DIMALIGNED",
+      "aliases": [
+        "DAL"
+      ],
+      "supportedBehavior": "Aligned dimension: two extension origins, then dimension line location."
+    },
+    {
+      "command": "MOVE",
+      "aliases": [
+        "M"
+      ],
+      "supportedBehavior": "Move unlocked selected geometry by base and destination points."
+    },
+    {
+      "command": "COPY",
+      "aliases": [
+        "CO"
+      ],
+      "supportedBehavior": "Copy unlocked selected geometry by base and destination points."
+    },
+    {
+      "command": "ROTATE",
+      "aliases": [
+        "RO"
+      ],
+      "supportedBehavior": "Rotate unlocked selection about a base point, CCW degrees."
+    },
+    {
+      "command": "SCALE",
+      "aliases": [
+        "SC"
+      ],
+      "supportedBehavior": "Uniformly scale unlocked selection about a base point."
+    },
+    {
+      "command": "MIRROR",
+      "aliases": [
+        "MI"
+      ],
+      "supportedBehavior": "Reflect selected geometry; retain originals. Mirrored curves become 256-segment polygons."
+    },
+    {
+      "command": "DIST",
+      "aliases": [],
+      "supportedBehavior": "Measure distance between points."
+    },
+    {
+      "command": "ID",
+      "aliases": [],
+      "supportedBehavior": "Report coordinates."
+    },
+    {
+      "command": "SELECT",
+      "aliases": [],
+      "supportedBehavior": "ALL, NONE, an object ID, or WINDOW then two corners."
+    },
+    {
+      "command": "AREA",
+      "aliases": [],
+      "supportedBehavior": "Area and perimeter of selected section components."
+    },
+    {
+      "command": "LIST",
+      "aliases": [],
+      "supportedBehavior": "List selected object IDs, geometry and locations."
+    },
+    {
+      "command": "ERASE",
+      "aliases": [
+        "E"
+      ],
+      "supportedBehavior": "Delete unlocked selected geometry."
+    },
+    {
+      "command": "BOUNDARY",
+      "aliases": [
+        "BO"
+      ],
+      "supportedBehavior": "Convert one selected closed draft polyline into a section boundary."
+    },
+    {
+      "command": "UNDO",
+      "aliases": [
+        "U"
+      ],
+      "supportedBehavior": "Undo one project operation."
+    },
+    {
+      "command": "REDO",
+      "aliases": [],
+      "supportedBehavior": "Redo one project operation."
+    },
+    {
+      "command": "ZOOM",
+      "aliases": [
+        "Z"
+      ],
+      "supportedBehavior": "Extents, In, Out or Reset."
+    },
+    {
+      "command": "PAN",
+      "aliases": [],
+      "supportedBehavior": "Translate the viewport by a drawing-space displacement."
+    },
+    {
+      "command": "GRID",
+      "aliases": [],
+      "supportedBehavior": "GRID: ON, OFF or toggle. SNAP uses GRID spacing; POLAR tracks 45° increments."
+    },
+    {
+      "command": "OSNAP",
+      "aliases": [],
+      "supportedBehavior": "OSNAP: ON, OFF or toggle. SNAP uses GRID spacing; POLAR tracks 45° increments."
+    },
+    {
+      "command": "ORTHO",
+      "aliases": [],
+      "supportedBehavior": "ORTHO: ON, OFF or toggle. SNAP uses GRID spacing; POLAR tracks 45° increments."
+    },
+    {
+      "command": "SNAP",
+      "aliases": [],
+      "supportedBehavior": "SNAP: ON, OFF or toggle. SNAP uses GRID spacing; POLAR tracks 45° increments."
+    },
+    {
+      "command": "POLAR",
+      "aliases": [],
+      "supportedBehavior": "POLAR: ON, OFF or toggle. SNAP uses GRID spacing; POLAR tracks 45° increments."
+    },
+    {
+      "command": "GRIDSPACING",
+      "aliases": [],
+      "supportedBehavior": "Set CAD grid and grid-snap spacing in drawing units."
+    },
+    {
+      "command": "UNITS",
+      "aliases": [],
+      "supportedBehavior": "Set unit label without rescaling existing geometry."
+    },
+    {
+      "command": "REGEN",
+      "aliases": [],
+      "supportedBehavior": "Recompute section properties."
+    },
+    {
+      "command": "SAVE",
+      "aliases": [],
+      "supportedBehavior": "Open the existing save dialog."
+    },
+    {
+      "command": "OPEN",
+      "aliases": [],
+      "supportedBehavior": "Open the existing load dialog."
+    },
+    {
+      "command": "HELP",
+      "aliases": [],
+      "supportedBehavior": "List supported commands and aliases."
+    },
+    {
+      "command": "CANCEL",
+      "aliases": [
+        "ESC"
+      ],
+      "supportedBehavior": "Cancel incomplete input without changing completed geometry."
+    }
+  ],
+  "upstreamCommands": [
+    {
+      "command": "-ATTEDIT",
+      "label": "Global",
+      "source": "crates/engine/src/cmd/blocks/attedit.rs",
+      "line": 27,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "-BLOCK",
+      "label": "Create Block",
+      "source": "crates/engine/src/cmd/blocks.rs",
+      "line": 35,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "-GROUP",
+      "label": "Group Options",
+      "source": "crates/engine/src/cmd/groups/dash.rs",
+      "line": 17,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "-LINETYPE",
+      "label": "Linetype",
+      "source": "crates/engine/src/cmd/props.rs",
+      "line": 32,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "-PLOTTERMANAGER",
+      "label": "Plotter Manager",
+      "source": "crates/engine/src/cmd/plotters.rs",
+      "line": 408,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "-VPORTS",
+      "label": "Viewports",
+      "source": "crates/engine/src/cmd/view/vports.rs",
+      "line": 35,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "-XREF",
+      "label": "External References",
+      "source": "crates/engine/src/cmd/blocks/xref.rs",
+      "line": 35,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "3DORBIT",
+      "label": "Orbit",
+      "source": "crates/engine/src/cmd/exchange.rs",
+      "line": 68,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "3DPOLY",
+      "label": "3D Polyline",
+      "source": "crates/engine/src/cmd/draw2.rs",
+      "line": 140,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "AI_DESELECT",
+      "label": "Deselect All",
+      "source": "crates/engine/src/cmd/edit.rs",
+      "line": 65,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "AIOBJECTSCALEADD",
+      "label": "Add Current Scale",
+      "source": "crates/engine/src/cmd/annoscale.rs",
+      "line": 28,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "AIOBJECTSCALEREMOVE",
+      "label": "Delete Current Scale",
+      "source": "crates/engine/src/cmd/annoscale.rs",
+      "line": 32,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "ALIASEDIT",
+      "label": "Command Aliases",
+      "source": "crates/engine/src/cmd/file/pgp.rs",
+      "line": 196,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "ALIGN",
+      "label": "Align",
+      "source": "crates/engine/src/cmd/modify2.rs",
+      "line": 50,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "ANGLE.MEASURE",
+      "label": "Angle",
+      "source": "crates/engine/src/cmd/utility.rs",
+      "line": 39,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "ANNORESET",
+      "label": "Synchronize Multiple-scale Positions",
+      "source": "crates/engine/src/cmd/annoscale.rs",
+      "line": 36,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "ANNOUPDATE",
+      "label": "Annotative Update",
+      "source": "crates/engine/src/cmd/annoscale.rs",
+      "line": 40,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "ANNOVISIBLE.ALL",
+      "label": "All Scales",
+      "source": "crates/engine/src/cmd/annoscale.rs",
+      "line": 46,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "ANNOVISIBLE.CURRENT",
+      "label": "Current Scale Only",
+      "source": "crates/engine/src/cmd/annoscale.rs",
+      "line": 43,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "ANNOVISIBLE.TOGGLE",
+      "label": "Annotation Visibility",
+      "source": "crates/engine/src/cmd/annoscale.rs",
+      "line": 49,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "APPLOAD",
+      "label": "Load Application...",
+      "source": "crates/engine/src/cmd/lisp.rs",
+      "line": 12,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "ARC",
+      "label": "Arc",
+      "source": "crates/engine/src/cmd/draw.rs",
+      "line": 55,
+      "nativeEquivalent": "ARC",
+      "status": "native-command-with-documented-limits"
+    },
+    {
+      "command": "ARC.CONTINUE",
+      "label": "Continue",
+      "source": "crates/engine/src/cmd/draw2.rs",
+      "line": 82,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "ARC.CSA",
+      "label": "Center, Start, Angle",
+      "source": "crates/engine/src/cmd/draw2.rs",
+      "line": 74,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "ARC.CSE",
+      "label": "Center, Start, End",
+      "source": "crates/engine/src/cmd/draw2.rs",
+      "line": 70,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "ARC.CSL",
+      "label": "Center, Start, Length",
+      "source": "crates/engine/src/cmd/draw2.rs",
+      "line": 78,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "ARC.SCA",
+      "label": "Start, Center, Angle",
+      "source": "crates/engine/src/cmd/draw2.rs",
+      "line": 50,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "ARC.SCE",
+      "label": "Start, Center, End",
+      "source": "crates/engine/src/cmd/draw2.rs",
+      "line": 46,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "ARC.SCL",
+      "label": "Start, Center, Length",
+      "source": "crates/engine/src/cmd/draw2.rs",
+      "line": 54,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "ARC.SEA",
+      "label": "Start, End, Angle",
+      "source": "crates/engine/src/cmd/draw2.rs",
+      "line": 58,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "ARC.SED",
+      "label": "Start, End, Direction",
+      "source": "crates/engine/src/cmd/draw2.rs",
+      "line": 62,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "ARC.SER",
+      "label": "Start, End, Radius",
+      "source": "crates/engine/src/cmd/draw2.rs",
+      "line": 66,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "AREA",
+      "label": "Area",
+      "source": "crates/engine/src/cmd/inquiry.rs",
+      "line": 43,
+      "nativeEquivalent": "AREA",
+      "status": "native-command-with-documented-limits"
+    },
+    {
+      "command": "ARRAY",
+      "label": "Array",
+      "source": "crates/engine/src/cmd/array.rs",
+      "line": 35,
+      "nativeEquivalent": "ARRAY",
+      "status": "native-command-with-documented-limits"
+    },
+    {
+      "command": "ARRAYCLOSE",
+      "label": "Close Array Editing",
+      "source": "crates/engine/src/cmd/array/edit.rs",
+      "line": 32,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "ARRAYEDIT",
+      "label": "Edit Array",
+      "source": "crates/engine/src/cmd/array/edit.rs",
+      "line": 26,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "ARRAYPATH",
+      "label": "Path Array",
+      "source": "crates/engine/src/cmd/modify2.rs",
+      "line": 79,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "ARRAYPOLAR",
+      "label": "Polar Array",
+      "source": "crates/engine/src/cmd/array.rs",
+      "line": 45,
+      "nativeEquivalent": "ARRAYPOLAR",
+      "status": "native-command-with-documented-limits"
+    },
+    {
+      "command": "ARRAYRECT",
+      "label": "Rectangular Array",
+      "source": "crates/engine/src/cmd/array.rs",
+      "line": 39,
+      "nativeEquivalent": "ARRAY",
+      "status": "native-command-with-documented-limits"
+    },
+    {
+      "command": "ATTACH",
+      "label": "Attach",
+      "source": "crates/engine/src/cmd/exchange.rs",
+      "line": 58,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "ATTDEF",
+      "label": "Define Attributes...",
+      "source": "crates/engine/src/cmd/blocks.rs",
+      "line": 44,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "ATTDISP",
+      "label": "Attribute Display",
+      "source": "crates/engine/src/cmd/blocks/attribs.rs",
+      "line": 16,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "ATTDISP.NORMAL",
+      "label": "Normal",
+      "source": "crates/engine/src/cmd/blocks/attribs.rs",
+      "line": 25,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "ATTDISP.OFF",
+      "label": "Off",
+      "source": "crates/engine/src/cmd/blocks/attribs.rs",
+      "line": 31,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "ATTDISP.ON",
+      "label": "On",
+      "source": "crates/engine/src/cmd/blocks/attribs.rs",
+      "line": 28,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "ATTEDIT",
+      "label": "Single...",
+      "source": "crates/engine/src/cmd/blocks/attedit.rs",
+      "line": 19,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "ATTSYNC",
+      "label": "Synchronize Attributes",
+      "source": "crates/engine/src/cmd/blocks/attribs.rs",
+      "line": 38,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "AUDIT",
+      "label": "Audit",
+      "source": "crates/engine/src/cmd/audit.rs",
+      "line": 15,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "AUTOCONSTRAIN",
+      "label": "AutoConstrain",
+      "source": "crates/engine/src/cmd/constraints.rs",
+      "line": 57,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "BASE",
+      "label": "Base",
+      "source": "crates/engine/src/cmd/blocks.rs",
+      "line": 52,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "BATTMAN",
+      "label": "Block Attribute Manager...",
+      "source": "crates/engine/src/cmd/blocks/battman.rs",
+      "line": 16,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "BCLOSE",
+      "label": "Close Block Editor",
+      "source": "crates/engine/src/cmd/blocks/bedit.rs",
+      "line": 30,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "BEDIT",
+      "label": "Block Editor",
+      "source": "crates/engine/src/cmd/blocks/bedit.rs",
+      "line": 18,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "BLEND",
+      "label": "Blend",
+      "source": "crates/engine/src/cmd/modify2.rs",
+      "line": 55,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "BLOCK",
+      "label": "Make...",
+      "source": "crates/engine/src/cmd/blocks.rs",
+      "line": 29,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "BLOCKREPLACE",
+      "label": "Replace Block...",
+      "source": "crates/engine/src/cmd/blocks/blockreplace.rs",
+      "line": 17,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "BLOCKS.DESCRIPTION",
+      "label": "Block Description...",
+      "source": "crates/engine/src/cmd/blocks/description.rs",
+      "line": 18,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "BLOCKS.DYNAMIC",
+      "label": "Dynamic Block Data",
+      "source": "crates/engine/src/cmd/blocks.rs",
+      "line": 53,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "BLOCKS.LIST",
+      "label": "List Blocks",
+      "source": "crates/engine/src/cmd/blocks.rs",
+      "line": 75,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "BLOCKS.REFERENCE",
+      "label": "Dynamic Block Reference",
+      "source": "crates/engine/src/cmd/blocks.rs",
+      "line": 57,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "BLOCKS.REFERENCE.GRIP",
+      "label": "Drag Dynamic Grip",
+      "source": "crates/engine/src/cmd/blocks.rs",
+      "line": 68,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "BLOCKS.REFERENCE.GRIPS",
+      "label": "Dynamic Block Grips",
+      "source": "crates/engine/src/cmd/blocks.rs",
+      "line": 64,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "BLOCKS.REFERENCE.SET",
+      "label": "Set Dynamic Property",
+      "source": "crates/engine/src/cmd/blocks.rs",
+      "line": 61,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "BOUNDARY",
+      "label": "Boundary...",
+      "source": "crates/engine/src/cmd/hatch.rs",
+      "line": 28,
+      "nativeEquivalent": "BOUNDARY",
+      "status": "native-command-with-documented-limits"
+    },
+    {
+      "command": "BREAK",
+      "label": "Break",
+      "source": "crates/engine/src/cmd/modify.rs",
+      "line": 108,
+      "nativeEquivalent": "BREAK",
+      "status": "native-command-with-documented-limits"
+    },
+    {
+      "command": "BREAKATPOINT",
+      "label": "Break At Point",
+      "source": "crates/engine/src/cmd/modify.rs",
+      "line": 113,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "BREAKLINE",
+      "label": "Break-line Symbol",
+      "source": "crates/engine/src/cmd/draw2/breakline.rs",
+      "line": 22,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "BSAVE",
+      "label": "Save Block",
+      "source": "crates/engine/src/cmd/blocks/bedit.rs",
+      "line": 24,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "BSAVEAS",
+      "label": "Save Block As",
+      "source": "crates/engine/src/cmd/blocks/bedit.rs",
+      "line": 25,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "BURST",
+      "label": "Explode Attributes to Text",
+      "source": "crates/engine/src/cmd/blocks/burst.rs",
+      "line": 14,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "CAL",
+      "label": "QuickCalc",
+      "source": "crates/engine/src/cmd/utility.rs",
+      "line": 13,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "CENTERLINE",
+      "label": "Center Line",
+      "source": "crates/engine/src/cmd/draw2.rs",
+      "line": 157,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "CENTERMARK",
+      "label": "Center Mark",
+      "source": "crates/engine/src/cmd/draw2.rs",
+      "line": 153,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "CHAMFER",
+      "label": "Chamfer",
+      "source": "crates/engine/src/cmd/modify.rs",
+      "line": 98,
+      "nativeEquivalent": "CHAMFER",
+      "status": "native-command-with-documented-limits"
+    },
+    {
+      "command": "CHSPACE",
+      "label": "Change Space",
+      "source": "crates/engine/src/cmd/modify2.rs",
+      "line": 71,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "CIRCLE",
+      "label": "Circle",
+      "source": "crates/engine/src/cmd/draw.rs",
+      "line": 50,
+      "nativeEquivalent": "CIRCLE",
+      "status": "native-command-with-documented-limits"
+    },
+    {
+      "command": "CIRCLE.2P",
+      "label": "2 Points",
+      "source": "crates/engine/src/cmd/draw2.rs",
+      "line": 90,
+      "nativeEquivalent": "CIRCLE2P",
+      "status": "native-command-with-documented-limits"
+    },
+    {
+      "command": "CIRCLE.3P",
+      "label": "3 Points",
+      "source": "crates/engine/src/cmd/draw2.rs",
+      "line": 94,
+      "nativeEquivalent": "CIRCLE3P",
+      "status": "native-command-with-documented-limits"
+    },
+    {
+      "command": "CIRCLE.CD",
+      "label": "Center, Diameter",
+      "source": "crates/engine/src/cmd/draw2.rs",
+      "line": 86,
+      "nativeEquivalent": "CIRCLED",
+      "status": "native-command-with-documented-limits"
+    },
+    {
+      "command": "CIRCLE.TTR",
+      "label": "Tan, Tan, Radius",
+      "source": "crates/engine/src/cmd/draw2.rs",
+      "line": 98,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "CIRCLE.TTT",
+      "label": "Tan, Tan, Tan",
+      "source": "crates/engine/src/cmd/draw2.rs",
+      "line": 102,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "CLOSE",
+      "label": "Close",
+      "source": "crates/engine/src/cmd/file.rs",
+      "line": 175,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "CLOSEALL",
+      "label": "Close All",
+      "source": "crates/engine/src/cmd/file.rs",
+      "line": 176,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "COLOR",
+      "label": "Color...",
+      "source": "crates/engine/src/cmd/props.rs",
+      "line": 26,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "COMPARE",
+      "label": "Compare Drawings...",
+      "source": "crates/engine/src/cmd/file/compare.rs",
+      "line": 69,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "COMPARE.NEXT",
+      "label": "Next Change",
+      "source": "crates/engine/src/cmd/file/compare.rs",
+      "line": 77,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "COMPARE.PREVIOUS",
+      "label": "Previous Change",
+      "source": "crates/engine/src/cmd/file/compare.rs",
+      "line": 78,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "COMPARECLOSE",
+      "label": "Close Comparison",
+      "source": "crates/engine/src/cmd/file/compare.rs",
+      "line": 79,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "COMPAREEXPORT",
+      "label": "Export Comparison",
+      "source": "crates/engine/src/cmd/file/compare/export.rs",
+      "line": 44,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "CONSTRAINTBAR",
+      "label": "Constraint Bars",
+      "source": "crates/engine/src/cmd/constraints.rs",
+      "line": 61,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "CONSTRAINTBAR.HIDEALL",
+      "label": "Hide All Constraint Bars",
+      "source": "crates/engine/src/cmd/constraints.rs",
+      "line": 67,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "CONSTRAINTBAR.SHOWALL",
+      "label": "Show All Constraint Bars",
+      "source": "crates/engine/src/cmd/constraints.rs",
+      "line": 65,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "CONSTRAINTINFER",
+      "label": "Infer Constraints",
+      "source": "crates/engine/src/cmd/constraints.rs",
+      "line": 102,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "CONSTRAINTS.DOF",
+      "label": "Degrees of Freedom",
+      "source": "crates/engine/src/cmd/constraints.rs",
+      "line": 106,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "CONSTRAINTS.INSPECT",
+      "label": "Inspect Constraints",
+      "source": "crates/engine/src/cmd/constraints.rs",
+      "line": 105,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "CONSTRAINTSETTINGS",
+      "label": "Constraint Settings",
+      "source": "crates/engine/src/cmd/constraints.rs",
+      "line": 98,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "COPY",
+      "label": "Copy",
+      "source": "crates/engine/src/cmd/modify.rs",
+      "line": 51,
+      "nativeEquivalent": "COPY",
+      "status": "native-command-with-documented-limits"
+    },
+    {
+      "command": "COPYBASE",
+      "label": "Copy with Base Point",
+      "source": "crates/engine/src/cmd/edit.rs",
+      "line": 40,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "COPYCLIP",
+      "label": "Copy",
+      "source": "crates/engine/src/cmd/edit.rs",
+      "line": 34,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "COUNT",
+      "label": "Count",
+      "source": "crates/engine/src/cmd/inquiry.rs",
+      "line": 67,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "COUNTLIST",
+      "label": "Count List",
+      "source": "crates/engine/src/cmd/inquiry.rs",
+      "line": 61,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "COUNTTABLE",
+      "label": "Count Table",
+      "source": "crates/engine/src/cmd/inquiry.rs",
+      "line": 64,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "CUTBASE",
+      "label": "Cut with Base Point",
+      "source": "crates/engine/src/cmd/edit.rs",
+      "line": 30,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "CUTCLIP",
+      "label": "Cut",
+      "source": "crates/engine/src/cmd/edit.rs",
+      "line": 25,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "DATAEXTRACTION",
+      "label": "Data Extraction...",
+      "source": "crates/engine/src/cmd/blocks/extract.rs",
+      "line": 26,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "DATALINK",
+      "label": "Data Link...",
+      "source": "crates/engine/src/cmd/table/breaks.rs",
+      "line": 25,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "DATALINKUPDATE",
+      "label": "Update Data Links",
+      "source": "crates/engine/src/cmd/table/breaks.rs",
+      "line": 28,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "DCDISPLAY",
+      "label": "Dynamic Dimensions",
+      "source": "crates/engine/src/cmd/constraints.rs",
+      "line": 82,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "DCDISPLAY.HIDEALL",
+      "label": "Hide All Dynamic Dimensions",
+      "source": "crates/engine/src/cmd/constraints.rs",
+      "line": 88,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "DCDISPLAY.SHOWALL",
+      "label": "Show All Dynamic Dimensions",
+      "source": "crates/engine/src/cmd/constraints.rs",
+      "line": 86,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "DCLINEAR",
+      "label": "Linear",
+      "source": "crates/engine/src/cmd/constraints.rs",
+      "line": 79,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "DDPTYPE",
+      "label": "Point Style...",
+      "source": "crates/engine/src/cmd/props.rs",
+      "line": 69,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "DELCONSTRAINT",
+      "label": "Delete Constraints",
+      "source": "crates/engine/src/cmd/constraints.rs",
+      "line": 90,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "DIM",
+      "label": "Dimension",
+      "source": "crates/engine/src/cmd/annotate.rs",
+      "line": 82,
+      "nativeEquivalent": "DIM",
+      "status": "native-command-with-documented-limits"
+    },
+    {
+      "command": "DIMALIGNED",
+      "label": "Aligned",
+      "source": "crates/engine/src/cmd/annotate.rs",
+      "line": 38,
+      "nativeEquivalent": "DIMALIGNED",
+      "status": "native-command-with-documented-limits"
+    },
+    {
+      "command": "DIMANGULAR",
+      "label": "Angular",
+      "source": "crates/engine/src/cmd/annotate.rs",
+      "line": 53,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "DIMARC",
+      "label": "Arc Length",
+      "source": "crates/engine/src/cmd/annotate.rs",
+      "line": 58,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "DIMBASELINE",
+      "label": "Baseline",
+      "source": "crates/engine/src/cmd/annotate.rs",
+      "line": 73,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "DIMBREAK",
+      "label": "Dimension Break",
+      "source": "crates/engine/src/cmd/annotate_dimedit.rs",
+      "line": 39,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "DIMCONSTRAINT",
+      "label": "Dimensional Constraint",
+      "source": "crates/engine/src/cmd/constraints.rs",
+      "line": 69,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "DIMCONTINUE",
+      "label": "Continue",
+      "source": "crates/engine/src/cmd/annotate.rs",
+      "line": 68,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "DIMDIAMETER",
+      "label": "Diameter",
+      "source": "crates/engine/src/cmd/annotate.rs",
+      "line": 48,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "DIMDISASSOCIATE",
+      "label": "Disassociate Dimensions",
+      "source": "crates/engine/src/cmd/annotate.rs",
+      "line": 106,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "DIMEDIT",
+      "label": "Dimension Edit",
+      "source": "crates/engine/src/cmd/annotate_dimedit.rs",
+      "line": 21,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "DIMEDIT.OBLIQUE",
+      "label": "Oblique",
+      "source": "crates/engine/src/cmd/annotate_dimedit.rs",
+      "line": 25,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "DIMINSPECT",
+      "label": "Inspection",
+      "source": "crates/engine/src/cmd/annotate_dimedit.rs",
+      "line": 43,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "DIMJOGGED",
+      "label": "Jogged",
+      "source": "crates/engine/src/cmd/annotate_dimedit.rs",
+      "line": 29,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "DIMJOGLINE",
+      "label": "Jogged Linear",
+      "source": "crates/engine/src/cmd/annotate_dimedit.rs",
+      "line": 34,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "DIMLINEAR",
+      "label": "Linear",
+      "source": "crates/engine/src/cmd/annotate.rs",
+      "line": 33,
+      "nativeEquivalent": "DIM",
+      "status": "native-command-with-documented-limits"
+    },
+    {
+      "command": "DIMORDINATE",
+      "label": "Ordinate",
+      "source": "crates/engine/src/cmd/annotate.rs",
+      "line": 63,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "DIMOVERRIDE",
+      "label": "Override",
+      "source": "crates/engine/src/cmd/annotate.rs",
+      "line": 96,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "DIMRADIUS",
+      "label": "Radius",
+      "source": "crates/engine/src/cmd/annotate.rs",
+      "line": 43,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "DIMREASSOCIATE",
+      "label": "Reassociate Dimensions",
+      "source": "crates/engine/src/cmd/annotate.rs",
+      "line": 101,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "DIMSPACE",
+      "label": "Dimension Space",
+      "source": "crates/engine/src/cmd/annotate.rs",
+      "line": 124,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "DIMSTYLE",
+      "label": "Dimension Style...",
+      "source": "crates/engine/src/cmd/props.rs",
+      "line": 50,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "DIMSTYLE.CURRENT",
+      "label": "Set Current Dimension Style",
+      "source": "crates/engine/src/cmd/props.rs",
+      "line": 58,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "DIMSTYLE.DELETE",
+      "label": "Delete Dimension Style",
+      "source": "crates/engine/src/cmd/props.rs",
+      "line": 57,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "DIMSTYLE.DIMENSION",
+      "label": "Dimension Style...",
+      "source": "crates/engine/src/cmd/props.rs",
+      "line": 54,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "DIMSTYLE.LIST",
+      "label": "List Dimension Styles",
+      "source": "crates/engine/src/cmd/props.rs",
+      "line": 55,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "DIMSTYLE.OVERRIDE",
+      "label": "Dimension Style Override",
+      "source": "crates/engine/src/cmd/props.rs",
+      "line": 59,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "DIMSTYLE.RENAME",
+      "label": "Rename Dimension Style",
+      "source": "crates/engine/src/cmd/props.rs",
+      "line": 56,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "DIMSTYLE.UPDATE",
+      "label": "Update",
+      "source": "crates/engine/src/cmd/annotate.rs",
+      "line": 92,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "DIMTEDIT",
+      "label": "Dimension Text Edit",
+      "source": "crates/engine/src/cmd/annotate.rs",
+      "line": 120,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "DIMTEDIT.ANGLE",
+      "label": "Angle",
+      "source": "crates/engine/src/cmd/annotate.rs",
+      "line": 111,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "DIMTEDIT.CENTER",
+      "label": "Center",
+      "source": "crates/engine/src/cmd/annotate.rs",
+      "line": 116,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "DIMTEDIT.HOME",
+      "label": "Home",
+      "source": "crates/engine/src/cmd/annotate.rs",
+      "line": 110,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "DIMTEDIT.LEFT",
+      "label": "Left",
+      "source": "crates/engine/src/cmd/annotate.rs",
+      "line": 115,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "DIMTEDIT.RIGHT",
+      "label": "Right",
+      "source": "crates/engine/src/cmd/annotate.rs",
+      "line": 119,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "DIST",
+      "label": "Distance",
+      "source": "crates/engine/src/cmd/inquiry.rs",
+      "line": 24,
+      "nativeEquivalent": "DIST",
+      "status": "native-command-with-documented-limits"
+    },
+    {
+      "command": "DIVIDE",
+      "label": "Divide",
+      "source": "crates/engine/src/cmd/draw2.rs",
+      "line": 114,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "DOCUMENT.BYTES",
+      "label": "Drawing as bytes",
+      "source": "crates/engine/src/cmd/file.rs",
+      "line": 184,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "DOCUMENT.SWITCH",
+      "label": "Switch Drawing",
+      "source": "crates/engine/src/cmd/file.rs",
+      "line": 183,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "DONUT",
+      "label": "Donut",
+      "source": "crates/engine/src/cmd/draw.rs",
+      "line": 98,
+      "nativeEquivalent": "DONUT",
+      "status": "native-command-with-documented-limits"
+    },
+    {
+      "command": "DRAWING.INSPECT",
+      "label": "Inspect Drawing",
+      "source": "crates/engine/src/cmd/inquiry.rs",
+      "line": 51,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "DRAWINGRECOVERY",
+      "label": "Drawing Recovery Manager...",
+      "source": "crates/engine/src/cmd/audit.rs",
+      "line": 25,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "DRAWORDER",
+      "label": "Draw Order",
+      "source": "crates/engine/src/cmd/draworder.rs",
+      "line": 17,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "DRAWORDER.ABOVE",
+      "label": "Bring Above Objects",
+      "source": "crates/engine/src/cmd/draworder.rs",
+      "line": 29,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "DRAWORDER.BACK",
+      "label": "Send to Back",
+      "source": "crates/engine/src/cmd/draworder.rs",
+      "line": 25,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "DRAWORDER.FRONT",
+      "label": "Bring to Front",
+      "source": "crates/engine/src/cmd/draworder.rs",
+      "line": 21,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "DRAWORDER.UNDER",
+      "label": "Send Under Objects",
+      "source": "crates/engine/src/cmd/draworder.rs",
+      "line": 33,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "DSETTINGS",
+      "label": "Drafting Settings...",
+      "source": "crates/engine/src/cmd/settings.rs",
+      "line": 95,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "DYNMODE",
+      "label": "Dynamic Input",
+      "source": "crates/engine/src/cmd/settings.rs",
+      "line": 51,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "EATTEXT",
+      "label": "Data Extraction...",
+      "source": "crates/engine/src/cmd/blocks/extract.rs",
+      "line": 35,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "ELLIPSE",
+      "label": "Ellipse",
+      "source": "crates/engine/src/cmd/draw.rs",
+      "line": 70,
+      "nativeEquivalent": "ELLIPSE",
+      "status": "native-command-with-documented-limits"
+    },
+    {
+      "command": "ELLIPSE.ARC",
+      "label": "Elliptical Arc",
+      "source": "crates/engine/src/cmd/draw2.rs",
+      "line": 110,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "ELLIPSE.AXIS",
+      "label": "Axis, End",
+      "source": "crates/engine/src/cmd/draw2.rs",
+      "line": 106,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "ENTITIES",
+      "label": "Query Entities",
+      "source": "crates/engine/src/cmd/inquiry.rs",
+      "line": 52,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "ERASE",
+      "label": "Erase",
+      "source": "crates/engine/src/cmd/modify.rs",
+      "line": 41,
+      "nativeEquivalent": "ERASE",
+      "status": "native-command-with-documented-limits"
+    },
+    {
+      "command": "ERASE.SELECTION",
+      "label": "Clear",
+      "source": "crates/engine/src/cmd/edit.rs",
+      "line": 63,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "EXPLODE",
+      "label": "Explode",
+      "source": "crates/engine/src/cmd/modify.rs",
+      "line": 103,
+      "nativeEquivalent": "EXPLODE",
+      "status": "native-command-with-documented-limits"
+    },
+    {
+      "command": "EXPORT",
+      "label": "Export...",
+      "source": "crates/engine/src/cmd/exchange.rs",
+      "line": 39,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "EXPORTPDF",
+      "label": "Export to PDF...",
+      "source": "crates/engine/src/cmd/layout.rs",
+      "line": 89,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "EXTEND",
+      "label": "Extend",
+      "source": "crates/engine/src/cmd/modify.rs",
+      "line": 88,
+      "nativeEquivalent": "EXTEND",
+      "status": "native-command-with-documented-limits"
+    },
+    {
+      "command": "FILLET",
+      "label": "Fillet",
+      "source": "crates/engine/src/cmd/modify.rs",
+      "line": 93,
+      "nativeEquivalent": "FILLET",
+      "status": "native-command-with-documented-limits"
+    },
+    {
+      "command": "FIND",
+      "label": "Find...",
+      "source": "crates/engine/src/cmd/utility.rs",
+      "line": 29,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "FLATTEN",
+      "label": "Flatten Objects",
+      "source": "crates/engine/src/cmd/modify2.rs",
+      "line": 75,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "GEOMCONSTRAINT",
+      "label": "Geometric Constraint",
+      "source": "crates/engine/src/cmd/constraints.rs",
+      "line": 41,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "GETVAR",
+      "label": "Get Variable",
+      "source": "crates/engine/src/cmd/settings.rs",
+      "line": 106,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "GRADIENT",
+      "label": "Gradient...",
+      "source": "crates/engine/src/cmd/hatch.rs",
+      "line": 27,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "GRID",
+      "label": "Grid Display",
+      "source": "crates/engine/src/cmd/settings.rs",
+      "line": 27,
+      "nativeEquivalent": "GRID",
+      "status": "native-command-with-documented-limits"
+    },
+    {
+      "command": "GRIP",
+      "label": "Grip Edit",
+      "source": "crates/engine/src/cmd/gripcmds.rs",
+      "line": 28,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "GRIP.MIRROR",
+      "label": "Grip Mirror",
+      "source": "crates/engine/src/cmd/gripcmds.rs",
+      "line": 23,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "GRIP.MOVE",
+      "label": "Grip Stretch",
+      "source": "crates/engine/src/cmd/gripcmds.rs",
+      "line": 15,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "GRIP.OPTION",
+      "label": "Grip Option",
+      "source": "crates/engine/src/cmd/gripcmds.rs",
+      "line": 25,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "GRIP.ROTATE",
+      "label": "Grip Rotate",
+      "source": "crates/engine/src/cmd/gripcmds.rs",
+      "line": 21,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "GRIP.SCALE",
+      "label": "Grip Scale",
+      "source": "crates/engine/src/cmd/gripcmds.rs",
+      "line": 22,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "GRIP.STRETCH",
+      "label": "Grip Stretch",
+      "source": "crates/engine/src/cmd/gripcmds.rs",
+      "line": 18,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "GROUP",
+      "label": "Group",
+      "source": "crates/engine/src/cmd/groups.rs",
+      "line": 28,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "GROUPEDIT",
+      "label": "Group Edit",
+      "source": "crates/engine/src/cmd/groups.rs",
+      "line": 37,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "GROUPS.LIST",
+      "label": "List Groups",
+      "source": "crates/engine/src/cmd/groups.rs",
+      "line": 40,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "HATCH",
+      "label": "Hatch...",
+      "source": "crates/engine/src/cmd/hatch.rs",
+      "line": 26,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "HATCH.PATTERNS",
+      "label": "Hatch Patterns",
+      "source": "crates/engine/src/cmd/props.rs",
+      "line": 28,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "HATCHEDIT",
+      "label": "Hatch Edit",
+      "source": "crates/engine/src/cmd/hatch.rs",
+      "line": 30,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "HATCHPICK",
+      "label": "Hatch Pick",
+      "source": "crates/engine/src/cmd/hatch.rs",
+      "line": 31,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "HATCHTOBACK",
+      "label": "Send Hatches to Back",
+      "source": "crates/engine/src/cmd/draworder.rs",
+      "line": 52,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "HELIX",
+      "label": "Helix",
+      "source": "crates/engine/src/cmd/draw2.rs",
+      "line": 145,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "HIDEOBJECTS",
+      "label": "Hide Objects",
+      "source": "crates/engine/src/cmd/selecttools.rs",
+      "line": 33,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "ID",
+      "label": "ID Point",
+      "source": "crates/engine/src/cmd/inquiry.rs",
+      "line": 31,
+      "nativeEquivalent": "ID",
+      "status": "native-command-with-documented-limits"
+    },
+    {
+      "command": "IMPORT",
+      "label": "Import...",
+      "source": "crates/engine/src/cmd/exchange.rs",
+      "line": 35,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "INSERT",
+      "label": "Block...",
+      "source": "crates/engine/src/cmd/blocks.rs",
+      "line": 39,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "INTERSECT",
+      "label": "Intersect",
+      "source": "crates/engine/src/cmd/inquiry/regions.rs",
+      "line": 32,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "ISODRAFT",
+      "label": "Isometric Drafting",
+      "source": "crates/engine/src/cmd/settings.rs",
+      "line": 62,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "ISOLATEOBJECTS",
+      "label": "Isolate Objects",
+      "source": "crates/engine/src/cmd/selecttools.rs",
+      "line": 29,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "ISOPLANE",
+      "label": "Isometric Plane",
+      "source": "crates/engine/src/cmd/settings.rs",
+      "line": 68,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "JOIN",
+      "label": "Join",
+      "source": "crates/engine/src/cmd/modify.rs",
+      "line": 114,
+      "nativeEquivalent": "JOIN",
+      "status": "native-command-with-documented-limits"
+    },
+    {
+      "command": "LAYCUR",
+      "label": "Change to Current Layer",
+      "source": "crates/engine/src/cmd/layer.rs",
+      "line": 31,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "LAYDEL",
+      "label": "Layer Delete",
+      "source": "crates/engine/src/cmd/layer.rs",
+      "line": 67,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "LAYER",
+      "label": "Layers",
+      "source": "crates/engine/src/cmd/layer.rs",
+      "line": 16,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "LAYER.CURRENT",
+      "label": "Make Current",
+      "source": "crates/engine/src/cmd/layer.rs",
+      "line": 24,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "LAYER.DELETE",
+      "label": "Delete Layer",
+      "source": "crates/engine/src/cmd/layer.rs",
+      "line": 28,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "LAYER.NEW",
+      "label": "New Layer",
+      "source": "crates/engine/src/cmd/layer.rs",
+      "line": 21,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "LAYER.SET",
+      "label": "Set Layer Properties",
+      "source": "crates/engine/src/cmd/layer.rs",
+      "line": 22,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "LAYERP",
+      "label": "Previous Layer",
+      "source": "crates/engine/src/cmd/layer.rs",
+      "line": 57,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "LAYERSTATE.DELETE",
+      "label": "Delete Layer State",
+      "source": "crates/engine/src/cmd/layer.rs",
+      "line": 61,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "LAYERSTATE.LIST",
+      "label": "List Layer States",
+      "source": "crates/engine/src/cmd/layer.rs",
+      "line": 60,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "LAYERSTATE.RENAME",
+      "label": "Rename Layer State",
+      "source": "crates/engine/src/cmd/layer.rs",
+      "line": 62,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "LAYERSTATE.RESTORE",
+      "label": "Restore Layer State",
+      "source": "crates/engine/src/cmd/layer.rs",
+      "line": 59,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "LAYERSTATE.SAVE",
+      "label": "Save Layer State",
+      "source": "crates/engine/src/cmd/layer.rs",
+      "line": 58,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "LAYFRZ",
+      "label": "Freeze Layer",
+      "source": "crates/engine/src/cmd/layer.rs",
+      "line": 37,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "LAYISO",
+      "label": "Isolate Layer",
+      "source": "crates/engine/src/cmd/layer.rs",
+      "line": 35,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "LAYLCK",
+      "label": "Lock Layer",
+      "source": "crates/engine/src/cmd/layer.rs",
+      "line": 47,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "LAYMCH",
+      "label": "Layer Match",
+      "source": "crates/engine/src/cmd/layer.rs",
+      "line": 30,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "LAYMCUR",
+      "label": "Make Object's Layer Current",
+      "source": "crates/engine/src/cmd/layer.rs",
+      "line": 29,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "LAYMRG",
+      "label": "Layer Merge",
+      "source": "crates/engine/src/cmd/layer.rs",
+      "line": 63,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "LAYOFF",
+      "label": "Layer Off",
+      "source": "crates/engine/src/cmd/layer.rs",
+      "line": 41,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "LAYON",
+      "label": "Turn All Layers On",
+      "source": "crates/engine/src/cmd/layer.rs",
+      "line": 55,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "LAYOUT",
+      "label": "Layout",
+      "source": "crates/engine/src/cmd/layout.rs",
+      "line": 23,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "LAYOUT.COPY",
+      "label": "Copy Layout",
+      "source": "crates/engine/src/cmd/layout.rs",
+      "line": 33,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "LAYOUT.DELETE",
+      "label": "Delete Layout",
+      "source": "crates/engine/src/cmd/layout.rs",
+      "line": 31,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "LAYOUT.LIST",
+      "label": "List Layouts",
+      "source": "crates/engine/src/cmd/layout.rs",
+      "line": 34,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "LAYOUT.NEW",
+      "label": "New Layout",
+      "source": "crates/engine/src/cmd/layout.rs",
+      "line": 27,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "LAYOUT.RENAME",
+      "label": "Rename Layout",
+      "source": "crates/engine/src/cmd/layout.rs",
+      "line": 32,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "LAYOUT.SAVEAS",
+      "label": "Save Layout as Template",
+      "source": "crates/engine/src/cmd/layout.rs",
+      "line": 35,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "LAYOUT.SET",
+      "label": "Switch Layout",
+      "source": "crates/engine/src/cmd/view.rs",
+      "line": 104,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "LAYTHW",
+      "label": "Thaw All Layers",
+      "source": "crates/engine/src/cmd/layer.rs",
+      "line": 56,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "LAYULK",
+      "label": "Unlock Layer",
+      "source": "crates/engine/src/cmd/layer.rs",
+      "line": 51,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "LAYUNISO",
+      "label": "Unisolate Layer",
+      "source": "crates/engine/src/cmd/layer.rs",
+      "line": 36,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "LEADER",
+      "label": "Leader",
+      "source": "crates/engine/src/cmd/annotate.rs",
+      "line": 91,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "LENGTHEN",
+      "label": "Lengthen",
+      "source": "crates/engine/src/cmd/modify2.rs",
+      "line": 45,
+      "nativeEquivalent": "LENGTHEN",
+      "status": "native-command-with-documented-limits"
+    },
+    {
+      "command": "LIMITS",
+      "label": "Drawing Limits",
+      "source": "crates/engine/src/cmd/props.rs",
+      "line": 41,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "LINE",
+      "label": "Line",
+      "source": "crates/engine/src/cmd/draw.rs",
+      "line": 40,
+      "nativeEquivalent": "LINE",
+      "status": "native-command-with-documented-limits"
+    },
+    {
+      "command": "LINETYPE",
+      "label": "Linetype...",
+      "source": "crates/engine/src/cmd/props.rs",
+      "line": 27,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "LISP",
+      "label": "Evaluate LISP",
+      "source": "crates/engine/src/cmd/lisp.rs",
+      "line": 18,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "LIST",
+      "label": "List",
+      "source": "crates/engine/src/cmd/inquiry.rs",
+      "line": 37,
+      "nativeEquivalent": "LIST",
+      "status": "native-command-with-documented-limits"
+    },
+    {
+      "command": "LOOPS",
+      "label": "Implied Loops",
+      "source": "crates/engine/src/cmd/inquiry.rs",
+      "line": 57,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "LTSCALE",
+      "label": "Linetype Scale",
+      "source": "crates/engine/src/cmd/props.rs",
+      "line": 34,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "LWDISPLAY",
+      "label": "Show/Hide Lineweight",
+      "source": "crates/engine/src/cmd/settings.rs",
+      "line": 57,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "LWEIGHT",
+      "label": "Lineweight...",
+      "source": "crates/engine/src/cmd/props.rs",
+      "line": 33,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "MASSPROP",
+      "label": "Region/Mass Properties",
+      "source": "crates/engine/src/cmd/inquiry/regions.rs",
+      "line": 37,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "MATCHPROP",
+      "label": "Match Properties",
+      "source": "crates/engine/src/cmd/props.rs",
+      "line": 21,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "MEASURE",
+      "label": "Measure",
+      "source": "crates/engine/src/cmd/draw2.rs",
+      "line": 119,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "MEASUREGEOM",
+      "label": "Measure Geometry",
+      "source": "crates/engine/src/cmd/utility.rs",
+      "line": 30,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "MIRROR",
+      "label": "Mirror",
+      "source": "crates/engine/src/cmd/modify.rs",
+      "line": 66,
+      "nativeEquivalent": "MIRROR",
+      "status": "native-command-with-documented-limits"
+    },
+    {
+      "command": "MLEADER",
+      "label": "Multileader",
+      "source": "crates/engine/src/cmd/annotate.rs",
+      "line": 86,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "MLEADERALIGN",
+      "label": "Align Multileaders",
+      "source": "crates/engine/src/cmd/mleader_edit.rs",
+      "line": 33,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "MLEADERCOLLECT",
+      "label": "Collect Multileaders",
+      "source": "crates/engine/src/cmd/mleader_edit.rs",
+      "line": 38,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "MLEADEREDIT",
+      "label": "Edit Multileader",
+      "source": "crates/engine/src/cmd/mleader_edit.rs",
+      "line": 21,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "MLEADEREDIT.ADD",
+      "label": "Add Leader",
+      "source": "crates/engine/src/cmd/mleader_edit.rs",
+      "line": 25,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "MLEADEREDIT.REMOVE",
+      "label": "Remove Leader",
+      "source": "crates/engine/src/cmd/mleader_edit.rs",
+      "line": 29,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "MLEADERSTYLE",
+      "label": "Multileader Style...",
+      "source": "crates/engine/src/cmd/props.rs",
+      "line": 65,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "MLEDIT",
+      "label": "Multiline...",
+      "source": "crates/engine/src/cmd/draw2/mline.rs",
+      "line": 31,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "MLINE",
+      "label": "Multiline",
+      "source": "crates/engine/src/cmd/draw2/mline.rs",
+      "line": 21,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "MLSTYLE",
+      "label": "Multiline Style...",
+      "source": "crates/engine/src/cmd/draw2/mline.rs",
+      "line": 26,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "MOCORO",
+      "label": "Move/Copy/Rotate",
+      "source": "crates/engine/src/cmd/modify2.rs",
+      "line": 67,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "MOVE",
+      "label": "Move",
+      "source": "crates/engine/src/cmd/modify.rs",
+      "line": 46,
+      "nativeEquivalent": "MOVE",
+      "status": "native-command-with-documented-limits"
+    },
+    {
+      "command": "MREDO",
+      "label": "Redo",
+      "source": "crates/engine/src/cmd/edit.rs",
+      "line": 24,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "MSPACE",
+      "label": "Model Space (in viewport)",
+      "source": "crates/engine/src/cmd/layout.rs",
+      "line": 93,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "MTEXT",
+      "label": "Multiline Text",
+      "source": "crates/engine/src/cmd/draw.rs",
+      "line": 108,
+      "nativeEquivalent": "MTEXT",
+      "status": "native-command-with-documented-limits"
+    },
+    {
+      "command": "MVIEW",
+      "label": "Viewports",
+      "source": "crates/engine/src/cmd/layout.rs",
+      "line": 38,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "MVIEW.POLYGONAL",
+      "label": "Polygonal Viewport",
+      "source": "crates/engine/src/cmd/layout.rs",
+      "line": 44,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "NCOPY",
+      "label": "Copy Nested Objects",
+      "source": "crates/engine/src/cmd/modify2.rs",
+      "line": 63,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "NEW",
+      "label": "New Drawing...",
+      "source": "crates/engine/src/cmd/file.rs",
+      "line": 162,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "OBJECTSCALE",
+      "label": "Add/Delete Scales...",
+      "source": "crates/engine/src/cmd/annoscale.rs",
+      "line": 23,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "OFFSET",
+      "label": "Offset",
+      "source": "crates/engine/src/cmd/modify.rs",
+      "line": 76,
+      "nativeEquivalent": "OFFSET",
+      "status": "native-command-with-documented-limits"
+    },
+    {
+      "command": "OPEN",
+      "label": "Open...",
+      "source": "crates/engine/src/cmd/file.rs",
+      "line": 169,
+      "nativeEquivalent": "OPEN",
+      "status": "native-command-with-documented-limits"
+    },
+    {
+      "command": "OPTIONS",
+      "label": "Options...",
+      "source": "crates/engine/src/cmd/options.rs",
+      "line": 63,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "ORTHO",
+      "label": "Ortho Mode",
+      "source": "crates/engine/src/cmd/settings.rs",
+      "line": 21,
+      "nativeEquivalent": "ORTHO",
+      "status": "native-command-with-documented-limits"
+    },
+    {
+      "command": "OSNAP",
+      "label": "Object Snap",
+      "source": "crates/engine/src/cmd/settings.rs",
+      "line": 88,
+      "nativeEquivalent": "OSNAP",
+      "status": "native-command-with-documented-limits"
+    },
+    {
+      "command": "OTRACK",
+      "label": "Object Snap Tracking",
+      "source": "crates/engine/src/cmd/settings.rs",
+      "line": 45,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "OVERKILL",
+      "label": "Delete Duplicate Objects",
+      "source": "crates/engine/src/cmd/overkill.rs",
+      "line": 22,
+      "nativeEquivalent": "OVERKILL",
+      "status": "native-command-with-documented-limits"
+    },
+    {
+      "command": "PAGESETUP",
+      "label": "Page Setup Manager...",
+      "source": "crates/engine/src/cmd/layout.rs",
+      "line": 78,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "PAN",
+      "label": "Pan",
+      "source": "crates/engine/src/cmd/view.rs",
+      "line": 63,
+      "nativeEquivalent": "PAN",
+      "status": "native-command-with-documented-limits"
+    },
+    {
+      "command": "PAN.DOWN",
+      "label": "Pan Down",
+      "source": "crates/engine/src/cmd/view.rs",
+      "line": 73,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "PAN.LEFT",
+      "label": "Pan Left",
+      "source": "crates/engine/src/cmd/view.rs",
+      "line": 70,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "PAN.RIGHT",
+      "label": "Pan Right",
+      "source": "crates/engine/src/cmd/view.rs",
+      "line": 71,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "PAN.UP",
+      "label": "Pan Up",
+      "source": "crates/engine/src/cmd/view.rs",
+      "line": 72,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "PARAMETERS",
+      "label": "Parameters Manager",
+      "source": "crates/engine/src/cmd/constraints.rs",
+      "line": 94,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "PASTEBLOCK",
+      "label": "Paste as Block",
+      "source": "crates/engine/src/cmd/edit.rs",
+      "line": 52,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "PASTECLIP",
+      "label": "Paste",
+      "source": "crates/engine/src/cmd/edit.rs",
+      "line": 46,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "PASTEORIG",
+      "label": "Paste to Original Coordinates",
+      "source": "crates/engine/src/cmd/edit.rs",
+      "line": 58,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "PDFBOOK",
+      "label": "Sheet Books to PDF...",
+      "source": "crates/engine/src/cmd/exchange.rs",
+      "line": 53,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "PEDIT",
+      "label": "Polyline",
+      "source": "crates/engine/src/cmd/modify2.rs",
+      "line": 27,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "PICKSTYLE",
+      "label": "Group Selection",
+      "source": "crates/engine/src/cmd/groups/pick.rs",
+      "line": 17,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "PLINE",
+      "label": "Polyline",
+      "source": "crates/engine/src/cmd/draw.rs",
+      "line": 45,
+      "nativeEquivalent": "PLINE",
+      "status": "native-command-with-documented-limits"
+    },
+    {
+      "command": "PLOT",
+      "label": "Print...",
+      "source": "crates/engine/src/cmd/layout.rs",
+      "line": 83,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "PLOTSTYLE",
+      "label": "Plot Style...",
+      "source": "crates/engine/src/cmd/layout/plotstyle.rs",
+      "line": 16,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "PLOTTERMANAGER",
+      "label": "Plotter Manager...",
+      "source": "crates/engine/src/cmd/plotters.rs",
+      "line": 400,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "PLOTWINDOW",
+      "label": "Plot Window",
+      "source": "crates/engine/src/cmd/plotters.rs",
+      "line": 395,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "POINT",
+      "label": "Point",
+      "source": "crates/engine/src/cmd/draw.rs",
+      "line": 75,
+      "nativeEquivalent": "POINT",
+      "status": "native-command-with-documented-limits"
+    },
+    {
+      "command": "POINT.MULTIPLE",
+      "label": "Multiple Point",
+      "source": "crates/engine/src/cmd/draw.rs",
+      "line": 80,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "POLAR",
+      "label": "Polar Tracking",
+      "source": "crates/engine/src/cmd/settings.rs",
+      "line": 39,
+      "nativeEquivalent": "POLAR",
+      "status": "native-command-with-documented-limits"
+    },
+    {
+      "command": "POLYGON",
+      "label": "Polygon",
+      "source": "crates/engine/src/cmd/draw.rs",
+      "line": 65,
+      "nativeEquivalent": "POLYGON",
+      "status": "native-command-with-documented-limits"
+    },
+    {
+      "command": "PREVIEW",
+      "label": "Plot Preview",
+      "source": "crates/engine/src/cmd/exchange.rs",
+      "line": 44,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "PROPERTIES",
+      "label": "Properties",
+      "source": "crates/engine/src/cmd/props.rs",
+      "line": 19,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "PROPERTIES.SET",
+      "label": "Set Properties",
+      "source": "crates/engine/src/cmd/props.rs",
+      "line": 20,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "PSPACE",
+      "label": "Paper Space",
+      "source": "crates/engine/src/cmd/layout.rs",
+      "line": 97,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "PUBLISH",
+      "label": "Batch Publish...",
+      "source": "crates/engine/src/cmd/exchange.rs",
+      "line": 49,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "PURGE",
+      "label": "Purge",
+      "source": "crates/engine/src/cmd/blocks.rs",
+      "line": 71,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "QDIM",
+      "label": "Quick Dimension",
+      "source": "crates/engine/src/cmd/annotate.rs",
+      "line": 78,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "QPMODE",
+      "label": "Quick Properties",
+      "source": "crates/engine/src/cmd/settings.rs",
+      "line": 79,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "QSAVE",
+      "label": "Save",
+      "source": "crates/engine/src/cmd/file.rs",
+      "line": 177,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "QSELECT",
+      "label": "Quick Select...",
+      "source": "crates/engine/src/cmd/qselect.rs",
+      "line": 14,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "QSELECT.INFO",
+      "label": "Quick Select Properties",
+      "source": "crates/engine/src/cmd/qselect.rs",
+      "line": 22,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "QUICKCALC.PICK",
+      "label": "QuickCalc Pick",
+      "source": "crates/engine/src/cmd/utility.rs",
+      "line": 25,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "RADIUS.MEASURE",
+      "label": "Radius",
+      "source": "crates/engine/src/cmd/utility.rs",
+      "line": 34,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "RAY",
+      "label": "Ray",
+      "source": "crates/engine/src/cmd/draw.rs",
+      "line": 89,
+      "nativeEquivalent": "RAY",
+      "status": "native-command-with-documented-limits"
+    },
+    {
+      "command": "RECOVER",
+      "label": "Recover...",
+      "source": "crates/engine/src/cmd/audit.rs",
+      "line": 19,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "RECTANG",
+      "label": "Rectangle",
+      "source": "crates/engine/src/cmd/draw.rs",
+      "line": 60,
+      "nativeEquivalent": "RECTANGLE",
+      "status": "native-command-with-documented-limits"
+    },
+    {
+      "command": "REDO",
+      "label": "Redo",
+      "source": "crates/engine/src/cmd/edit.rs",
+      "line": 23,
+      "nativeEquivalent": "REDO",
+      "status": "native-command-with-documented-limits"
+    },
+    {
+      "command": "REDRAW",
+      "label": "Redraw",
+      "source": "crates/engine/src/cmd/view.rs",
+      "line": 90,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "REFCLOSE",
+      "label": "Save Reference Edits",
+      "source": "crates/engine/src/cmd/blocks/refedit.rs",
+      "line": 45,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "REFEDIT",
+      "label": "Edit Reference In-Place",
+      "source": "crates/engine/src/cmd/blocks/refedit.rs",
+      "line": 35,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "REFSET",
+      "label": "Working Set",
+      "source": "crates/engine/src/cmd/blocks/refedit.rs",
+      "line": 40,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "REGEN",
+      "label": "Regen",
+      "source": "crates/engine/src/cmd/view.rs",
+      "line": 74,
+      "nativeEquivalent": "REGEN",
+      "status": "native-command-with-documented-limits"
+    },
+    {
+      "command": "REGENALL",
+      "label": "Regen All",
+      "source": "crates/engine/src/cmd/view.rs",
+      "line": 83,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "REGION",
+      "label": "Region",
+      "source": "crates/engine/src/cmd/hatch.rs",
+      "line": 29,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "REINIT",
+      "label": "Reinitialize",
+      "source": "crates/engine/src/cmd/file/pgp.rs",
+      "line": 201,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "RENAME",
+      "label": "Rename...",
+      "source": "crates/engine/src/cmd/props.rs",
+      "line": 73,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "REVCLOUD",
+      "label": "Rectangular",
+      "source": "crates/engine/src/cmd/draw2.rs",
+      "line": 124,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "REVCLOUD.FREEHAND",
+      "label": "Freehand",
+      "source": "crates/engine/src/cmd/draw2.rs",
+      "line": 132,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "REVCLOUD.POLYGONAL",
+      "label": "Polygonal",
+      "source": "crates/engine/src/cmd/draw2.rs",
+      "line": 128,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "REVERSE",
+      "label": "Reverse",
+      "source": "crates/engine/src/cmd/modify2.rs",
+      "line": 60,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "ROTATE",
+      "label": "Rotate",
+      "source": "crates/engine/src/cmd/modify.rs",
+      "line": 56,
+      "nativeEquivalent": "ROTATE",
+      "status": "native-command-with-documented-limits"
+    },
+    {
+      "command": "SAVEAS",
+      "label": "Save As...",
+      "source": "crates/engine/src/cmd/file.rs",
+      "line": 178,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "SCALE",
+      "label": "Scale",
+      "source": "crates/engine/src/cmd/modify.rs",
+      "line": 61,
+      "nativeEquivalent": "SCALE",
+      "status": "native-command-with-documented-limits"
+    },
+    {
+      "command": "SCALELISTEDIT",
+      "label": "Scale List...",
+      "source": "crates/engine/src/cmd/annoscale.rs",
+      "line": 16,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "SCRIPT",
+      "label": "Run Script...",
+      "source": "crates/engine/src/cmd/file.rs",
+      "line": 187,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "SELECT",
+      "label": "Select",
+      "source": "crates/engine/src/cmd/edit.rs",
+      "line": 66,
+      "nativeEquivalent": "SELECT",
+      "status": "native-command-with-documented-limits"
+    },
+    {
+      "command": "SELECTALL",
+      "label": "Select All",
+      "source": "crates/engine/src/cmd/edit.rs",
+      "line": 64,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "SELECTIONCYCLING",
+      "label": "Selection Cycling",
+      "source": "crates/engine/src/cmd/settings.rs",
+      "line": 84,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "SELECTSIMILAR",
+      "label": "Select Similar",
+      "source": "crates/engine/src/cmd/selecttools.rs",
+      "line": 21,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "SETVAR",
+      "label": "Set Variable",
+      "source": "crates/engine/src/cmd/settings.rs",
+      "line": 100,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "SHAPES",
+      "label": "Analyze Shapes",
+      "source": "crates/engine/src/cmd/inquiry.rs",
+      "line": 55,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "SHARE",
+      "label": "Share",
+      "source": "crates/engine/src/cmd/exchange.rs",
+      "line": 63,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "SNAP",
+      "label": "Snap Mode",
+      "source": "crates/engine/src/cmd/settings.rs",
+      "line": 33,
+      "nativeEquivalent": "SNAP",
+      "status": "native-command-with-documented-limits"
+    },
+    {
+      "command": "SPLINE",
+      "label": "Spline",
+      "source": "crates/engine/src/cmd/draw.rs",
+      "line": 93,
+      "nativeEquivalent": "SPLINE",
+      "status": "native-command-with-documented-limits"
+    },
+    {
+      "command": "SPLINE.CV",
+      "label": "Control Vertices",
+      "source": "crates/engine/src/cmd/draw2.rs",
+      "line": 149,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "SPLINEDIT",
+      "label": "Spline",
+      "source": "crates/engine/src/cmd/modify2.rs",
+      "line": 36,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "STATUS",
+      "label": "Status",
+      "source": "crates/engine/src/cmd/inquiry.rs",
+      "line": 50,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "STRETCH",
+      "label": "Stretch",
+      "source": "crates/engine/src/cmd/modify.rs",
+      "line": 71,
+      "nativeEquivalent": "STRETCH",
+      "status": "native-command-with-documented-limits"
+    },
+    {
+      "command": "STYLE",
+      "label": "Text Style...",
+      "source": "crates/engine/src/cmd/props.rs",
+      "line": 42,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "STYLE.CURRENT",
+      "label": "Set Current Text Style",
+      "source": "crates/engine/src/cmd/props.rs",
+      "line": 49,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "STYLE.DELETE",
+      "label": "Delete Text Style",
+      "source": "crates/engine/src/cmd/props.rs",
+      "line": 48,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "STYLE.LIST",
+      "label": "List Text Styles",
+      "source": "crates/engine/src/cmd/props.rs",
+      "line": 46,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "STYLE.RENAME",
+      "label": "Rename Text Style",
+      "source": "crates/engine/src/cmd/props.rs",
+      "line": 47,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "STYLESMANAGER",
+      "label": "Plot Style Manager...",
+      "source": "crates/engine/src/cmd/layout/plotstyle.rs",
+      "line": 21,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "SUBTRACT",
+      "label": "Subtract",
+      "source": "crates/engine/src/cmd/inquiry/regions.rs",
+      "line": 27,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "SYSVARS",
+      "label": "List System Variables",
+      "source": "crates/engine/src/cmd/settings.rs",
+      "line": 107,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "TABLE",
+      "label": "Table...",
+      "source": "crates/engine/src/cmd/table.rs",
+      "line": 25,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "TABLE.BREAK",
+      "label": "Table Breaks",
+      "source": "crates/engine/src/cmd/table/breaks.rs",
+      "line": 19,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "TABLE.CELLSTYLE",
+      "label": "Set Table Cell Style",
+      "source": "crates/engine/src/cmd/table/cells.rs",
+      "line": 23,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "TABLE.DELETECOL",
+      "label": "Delete Column",
+      "source": "crates/engine/src/cmd/table.rs",
+      "line": 35,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "TABLE.DELETEROW",
+      "label": "Delete Row",
+      "source": "crates/engine/src/cmd/table.rs",
+      "line": 33,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "TABLE.FORMULA",
+      "label": "Insert Table Formula",
+      "source": "crates/engine/src/cmd/table/cells.rs",
+      "line": 25,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "TABLE.INSERTCOL",
+      "label": "Insert Column",
+      "source": "crates/engine/src/cmd/table.rs",
+      "line": 34,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "TABLE.INSERTROW",
+      "label": "Insert Row",
+      "source": "crates/engine/src/cmd/table.rs",
+      "line": 32,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "TABLE.MERGE",
+      "label": "Merge Cells",
+      "source": "crates/engine/src/cmd/table.rs",
+      "line": 36,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "TABLE.RECALC",
+      "label": "Recalculate Table Formulas",
+      "source": "crates/engine/src/cmd/table/cells.rs",
+      "line": 28,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "TABLE.SET",
+      "label": "Set Table Cell",
+      "source": "crates/engine/src/cmd/table.rs",
+      "line": 30,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "TABLE.UNMERGE",
+      "label": "Unmerge Cells",
+      "source": "crates/engine/src/cmd/table.rs",
+      "line": 37,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "TABLEDIT",
+      "label": "Edit Table Cell",
+      "source": "crates/engine/src/cmd/table/cells.rs",
+      "line": 29,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "TABLEEXPORT",
+      "label": "Export Table",
+      "source": "crates/engine/src/cmd/table/cells.rs",
+      "line": 32,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "TABLESTYLE",
+      "label": "Table Style...",
+      "source": "crates/engine/src/cmd/props.rs",
+      "line": 61,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "TABLESTYLE.CELLSTYLE",
+      "label": "Table Cell Style",
+      "source": "crates/engine/src/cmd/table/cells.rs",
+      "line": 20,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "TEXT",
+      "label": "Single Line Text",
+      "source": "crates/engine/src/cmd/draw.rs",
+      "line": 103,
+      "nativeEquivalent": "TEXT",
+      "status": "native-command-with-documented-limits"
+    },
+    {
+      "command": "TEXTEDIT",
+      "label": "Edit Text...",
+      "source": "crates/engine/src/cmd/modify2.rs",
+      "line": 83,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "TEXTS",
+      "label": "Query Texts",
+      "source": "crates/engine/src/cmd/inquiry.rs",
+      "line": 58,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "TEXTTOFRONT",
+      "label": "Bring Annotations to Front",
+      "source": "crates/engine/src/cmd/draworder.rs",
+      "line": 37,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "TEXTTOFRONT.ALL",
+      "label": "All Annotation Objects",
+      "source": "crates/engine/src/cmd/draworder.rs",
+      "line": 49,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "TEXTTOFRONT.DIMENSIONS",
+      "label": "Dimension Objects Only",
+      "source": "crates/engine/src/cmd/draworder.rs",
+      "line": 43,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "TEXTTOFRONT.LEADERS",
+      "label": "Leaders Only",
+      "source": "crates/engine/src/cmd/draworder.rs",
+      "line": 46,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "TEXTTOFRONT.TEXT",
+      "label": "Text Objects Only",
+      "source": "crates/engine/src/cmd/draworder.rs",
+      "line": 40,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "THICKNESS",
+      "label": "Thickness",
+      "source": "crates/engine/src/cmd/props.rs",
+      "line": 36,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "TIME",
+      "label": "Time",
+      "source": "crates/engine/src/cmd/inquiry.rs",
+      "line": 49,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "TOLERANCE",
+      "label": "Tolerance...",
+      "source": "crates/engine/src/cmd/tolerance.rs",
+      "line": 14,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "TRANSPARENCYDISPLAY",
+      "label": "Show/Hide Transparency",
+      "source": "crates/engine/src/cmd/settings.rs",
+      "line": 75,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "TRIM",
+      "label": "Trim",
+      "source": "crates/engine/src/cmd/modify.rs",
+      "line": 81,
+      "nativeEquivalent": "TRIM",
+      "status": "native-command-with-documented-limits"
+    },
+    {
+      "command": "TXT2MTXT",
+      "label": "Convert Text to Mtext",
+      "source": "crates/engine/src/cmd/txt2mtxt.rs",
+      "line": 20,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "U",
+      "label": "Undo",
+      "source": "crates/engine/src/cmd/edit.rs",
+      "line": 16,
+      "nativeEquivalent": "UNDO",
+      "status": "native-command-with-documented-limits"
+    },
+    {
+      "command": "UNDO",
+      "label": "Undo",
+      "source": "crates/engine/src/cmd/edit.rs",
+      "line": 17,
+      "nativeEquivalent": "UNDO",
+      "status": "native-command-with-documented-limits"
+    },
+    {
+      "command": "UNGROUP",
+      "label": "Ungroup",
+      "source": "crates/engine/src/cmd/groups.rs",
+      "line": 33,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "UNION",
+      "label": "Union",
+      "source": "crates/engine/src/cmd/inquiry/regions.rs",
+      "line": 22,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "UNISOLATEOBJECTS",
+      "label": "End Object Isolation",
+      "source": "crates/engine/src/cmd/selecttools.rs",
+      "line": 37,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "UNITS",
+      "label": "Units...",
+      "source": "crates/engine/src/cmd/props.rs",
+      "line": 35,
+      "nativeEquivalent": "UNITS",
+      "status": "native-command-with-documented-limits"
+    },
+    {
+      "command": "USAGE",
+      "label": "Analyze Usage",
+      "source": "crates/engine/src/cmd/inquiry.rs",
+      "line": 56,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "VIEW",
+      "label": "Named Views...",
+      "source": "crates/engine/src/cmd/view/named_views.rs",
+      "line": 22,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "VIEW.GET",
+      "label": "Get View",
+      "source": "crates/engine/src/cmd/view.rs",
+      "line": 99,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "VIEW.SET",
+      "label": "Set View",
+      "source": "crates/engine/src/cmd/view.rs",
+      "line": 98,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "VIEWPORT.SET",
+      "label": "Viewport Properties",
+      "source": "crates/engine/src/cmd/layout.rs",
+      "line": 72,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "VOLUME.MEASURE",
+      "label": "Volume",
+      "source": "crates/engine/src/cmd/utility.rs",
+      "line": 44,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "VPCLIP",
+      "label": "Clip Viewport",
+      "source": "crates/engine/src/cmd/layout.rs",
+      "line": 48,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "VPLAYER",
+      "label": "Viewport Layer Freeze",
+      "source": "crates/engine/src/cmd/layout.rs",
+      "line": 75,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "VPORTS",
+      "label": "New Viewports...",
+      "source": "crates/engine/src/cmd/layout.rs",
+      "line": 52,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "VPORTS.1",
+      "label": "1 Viewport",
+      "source": "crates/engine/src/cmd/layout.rs",
+      "line": 56,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "VPORTS.2",
+      "label": "2 Viewports",
+      "source": "crates/engine/src/cmd/layout.rs",
+      "line": 60,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "VPORTS.3",
+      "label": "3 Viewports",
+      "source": "crates/engine/src/cmd/layout.rs",
+      "line": 64,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "VPORTS.4",
+      "label": "4 Viewports",
+      "source": "crates/engine/src/cmd/layout.rs",
+      "line": 68,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "VPORTS.ACTIVATE",
+      "label": "Set Current Viewport",
+      "source": "crates/engine/src/cmd/view/vports.rs",
+      "line": 40,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "VPORTS.NAMED",
+      "label": "Named Viewports...",
+      "source": "crates/engine/src/cmd/view/vports.rs",
+      "line": 41,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "WBLOCK",
+      "label": "Write Block",
+      "source": "crates/engine/src/cmd/blocks.rs",
+      "line": 51,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "WIPEOUT",
+      "label": "Wipeout",
+      "source": "crates/engine/src/cmd/draw2.rs",
+      "line": 136,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "XATTACH",
+      "label": "DWG Reference...",
+      "source": "crates/engine/src/cmd/blocks/xref.rs",
+      "line": 25,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "XBIND",
+      "label": "Bind...",
+      "source": "crates/engine/src/cmd/blocks/xref.rs",
+      "line": 39,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "XLINE",
+      "label": "Construction Line",
+      "source": "crates/engine/src/cmd/draw.rs",
+      "line": 84,
+      "nativeEquivalent": "XLINE",
+      "status": "native-command-with-documented-limits"
+    },
+    {
+      "command": "XOPEN",
+      "label": "Open Xref",
+      "source": "crates/engine/src/cmd/blocks/xref.rs",
+      "line": 44,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "XREF",
+      "label": "Reference Manager",
+      "source": "crates/engine/src/cmd/blocks/xref.rs",
+      "line": 30,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "ZOOM",
+      "label": "Zoom",
+      "source": "crates/engine/src/cmd/view.rs",
+      "line": 20,
+      "nativeEquivalent": "ZOOM",
+      "status": "native-command-with-documented-limits"
+    },
+    {
+      "command": "ZOOM.ALL",
+      "label": "Zoom All",
+      "source": "crates/engine/src/cmd/view.rs",
+      "line": 50,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "ZOOM.DYNAMIC",
+      "label": "Zoom Dynamic",
+      "source": "crates/engine/src/cmd/view.rs",
+      "line": 32,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "ZOOM.EXTENTS",
+      "label": "Zoom Extents",
+      "source": "crates/engine/src/cmd/view.rs",
+      "line": 51,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "ZOOM.IN",
+      "label": "Zoom In",
+      "source": "crates/engine/src/cmd/view.rs",
+      "line": 48,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "ZOOM.OBJECT",
+      "label": "Zoom Object",
+      "source": "crates/engine/src/cmd/view.rs",
+      "line": 55,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "ZOOM.OUT",
+      "label": "Zoom Out",
+      "source": "crates/engine/src/cmd/view.rs",
+      "line": 49,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "ZOOM.PREVIOUS",
+      "label": "Zoom Previous",
+      "source": "crates/engine/src/cmd/view.rs",
+      "line": 38,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "ZOOM.REALTIME",
+      "label": "Zoom Realtime",
+      "source": "crates/engine/src/cmd/view.rs",
+      "line": 26,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    },
+    {
+      "command": "ZOOM.WINDOW",
+      "label": "Zoom Window",
+      "source": "crates/engine/src/cmd/view.rs",
+      "line": 42,
+      "nativeEquivalent": null,
+      "status": "not-ported"
+    }
+  ]
+}

@@ -1,5 +1,11 @@
 'use client';
+import { cadRegion, synchronizeCadRegion } from '@/engine/cadRegion';
+import { cadPathPoints } from '@/engine/cadPath';
 import React, { useRef, useState, useCallback, useEffect, useMemo } from 'react';
+import { visibleViewportBounds } from '@/engine/viewport';
+import { draftInRect, dimensionGeometry, drawingEntityPoints, clipCadConstruction } from '@/engine/cad';
+import CadDimension from './CadDimension';
+import type { CadApi } from './CadCommands';
 import type { StoreState } from '@/store/useStore';
 import type { Point, SectionComponent } from '@/engine/types';
 import { computeComponentProps } from '@/engine/geometry';
@@ -31,6 +37,7 @@ const DEFAULT_PALETTE = resolveCanvasPalette(DEFAULT_CANVAS_THEME);
 
 interface Props {
   store: StoreState;
+  cad?: CadApi;
   showGrid: boolean;
   /** Object Snap enabled (OSNAP / F3). */
   osnap: boolean;
@@ -52,9 +59,11 @@ function getGridSize(viewW: number): number {
 
 type SelectionRect = { x0: number; y0: number; x1: number; y1: number; mode: 'window' | 'crossing'; additive: boolean } | null;
 
-export default function Canvas({ store, showGrid, osnap, osnapLabels = true, viewBox, setViewBox, dimensionFontScale, palette: paletteProp }: Props) {
+export default function Canvas({ store, showGrid, osnap, osnapLabels = true, viewBox, setViewBox, dimensionFontScale, palette: paletteProp, cad }: Props) {
   const palette = paletteProp ?? DEFAULT_PALETTE;
   const svgRef = useRef<SVGSVGElement>(null);
+  const draftDrag = useRef<{ id: string; start: Point; delta: Point } | null>(null);
+  const [draftDelta, setDraftDelta] = useState<Point & { id?: string }>({ x: 0, y: 0 });
   const [isPanning, setIsPanning] = useState(false);
   const panStartRef = useRef<{ x: number; y: number; vbx: number; vby: number }>({ x: 0, y: 0, vbx: 0, vby: 0 });
   const [dragId, setDragId] = useState<string | null>(null);
@@ -194,6 +203,10 @@ export default function Canvas({ store, showGrid, osnap, osnapLabels = true, vie
 
   const handlePointerMove = useCallback((e: React.PointerEvent) => {
     const world = svgToWorld(e.clientX, e.clientY);
+    if (draftDrag.current && !cad?.pointInput) {
+      const delta = { x: world.x - draftDrag.current.start.x, y: world.y - draftDrag.current.start.y };
+      draftDrag.current.delta = delta; setDraftDelta({ ...delta, id: draftDrag.current.id }); return;
+    }
     setMouseWorld(world);
     setPointerInside(true);
 
@@ -303,9 +316,16 @@ export default function Canvas({ store, showGrid, osnap, osnapLabels = true, vie
         setSelRect(rect);
       }
     }
-  }, [isPanning, dragId, viewBox, svgToWorld, getViewTransform, setViewBox, store, osnap, hoverGeometry, hoverGuides, selectionKey]);
+  }, [isPanning, dragId, viewBox, svgToWorld, getViewTransform, setViewBox, store, osnap, hoverGeometry, hoverGuides, selectionKey, cad?.pointInput]);
 
   const finishPointer = useCallback((e: React.PointerEvent) => {
+    if (draftDrag.current) {
+      const { id, delta } = draftDrag.current;
+      draftDrag.current = null; setDraftDelta({ x: 0, y: 0 });
+      if (svgRef.current?.hasPointerCapture(e.pointerId)) svgRef.current.releasePointerCapture(e.pointerId);
+      if (e.type !== 'pointercancel' && (delta.x || delta.y)) store.setProject({ ...store.project, drawingEntities: store.project.drawingEntities?.map(entity => entity.id !== id ? entity : synchronizeCadRegion({ ...entity, points: entity.points.map(p => ({ x: p.x + delta.x, y: p.y + delta.y })) })) });
+      return;
+    }
     if (svgRef.current?.hasPointerCapture(e.pointerId)) {
       svgRef.current.releasePointerCapture(e.pointerId);
     }
@@ -320,7 +340,7 @@ export default function Canvas({ store, showGrid, osnap, osnapLabels = true, vie
       const start = selStartRef.current;
       const rect = selRectRef.current;
       if (rect) {
-        const ids = selectByRect(store.project.components, rect, rect.mode);
+        const ids = [...selectByRect(store.project.components, rect, rect.mode), ...(store.project.drawingEntities ?? []).filter(entity => draftInRect(entity, rect, rect.mode === 'crossing')).map(entity => entity.id)];
         store.selectComponents(rect.additive ? [...new Set([...store.selectedIds, ...ids])] : ids);
       } else {
         // Click: pick-box selection near edges/nodes, otherwise deselect.
@@ -409,7 +429,8 @@ export default function Canvas({ store, showGrid, osnap, osnapLabels = true, vie
     svgRef.current?.setPointerCapture(e.pointerId);
   }, [store, svgToWorld]);
 
-  const gridSize = getGridSize(viewBox.w);
+  const gridSize = cad?.spacing ?? getGridSize(viewBox.w);
+  const visibleBounds = visibleViewportBounds(viewBox, svgSize.w, svgSize.h);
 
   // World units per screen pixel for the current zoom (derived from viewBox +
   // element size, so overlays track wheel zoom / pan without a mouse move).
@@ -448,12 +469,49 @@ export default function Canvas({ store, showGrid, osnap, osnapLabels = true, vie
     h: Math.abs(selRect.y1 - selRect.y0),
   } : null;
 
+  const cadFilledRegions = useMemo(() => new Map((store.project.drawingEntities ?? []).map(e => [e.id, cadRegion(e)])), [store.project.drawingEntities]);
+  const cadActive = !!cad;
+  const cadSnapGeometry = useMemo(() => {
+    if (!cadActive) return { rings: [] as Point[][], centers: [] as Point[] };
+    const props = store.project.components.filter(c => c.visible).map(c => computeComponentProps(c));
+    const rings = props.map(p => p.outline.length ? [...p.outline, p.outline[0]] : []);
+    return { rings: [...rings, ...(store.project.drawingEntities ?? []).flatMap(e => e.kind === 'dimension' ? dimensionGeometry(e).segments : [drawingEntityPoints(e)])], centers: props.map(p => ({ x: p.cx, y: p.cy })) };
+  }, [cadActive, store.project.components, store.project.drawingEntities]);
+  const cadMousePoint = (clientX: number, clientY: number): Point => {
+    const world = svgToWorld(clientX, clientY);
+    // Window corners follow the real cursor, not drawing snaps or axis constraints.
+    if (cad?.selectionInput) return world;
+    const tolerance = SNAP_APERTURE_PX / getViewTransform().scale;
+    if (cad?.pathStart && Math.hypot(world.x - cad.pathStart.x, world.y - cad.pathStart.y) <= tolerance) return cad.pathStart;
+    if (!osnap) return world;
+    let best = world, distance = tolerance;
+    const consider = (p: Point) => { const d = Math.hypot(p.x - world.x, p.y - world.y); if (d < distance) { distance = d; best = p; } };
+    cadSnapGeometry.rings.forEach(points => points.forEach((p, i) => {
+      consider(p);
+      if (i > 0) { const a = points[i - 1]; consider({ x: (a.x + p.x) / 2, y: (a.y + p.y) / 2 }); }
+    }));
+    cadSnapGeometry.centers.forEach(consider);
+    // Prefer discrete feature snaps; nearest-edge is a fallback, not an override.
+    if (distance === tolerance) cadSnapGeometry.rings.forEach(points => points.forEach((p, i) => {
+      if (!i) return;
+      const a = points[i - 1], dx = p.x - a.x, dy = p.y - a.y, length2 = dx * dx + dy * dy;
+      if (length2) { const t = Math.max(0, Math.min(1, ((world.x - a.x) * dx + (world.y - a.y) * dy) / length2)); consider({ x: a.x + t * dx, y: a.y + t * dy }); }
+    }));
+    return best;
+  };
+
   return (
     <div className="relative w-full h-full" style={{ background: palette.background, transition: 'background-color 120ms linear' }}>
       <svg
         ref={svgRef}
         className="w-full h-full"
         viewBox={`${viewBox.x} ${viewBox.y} ${viewBox.w} ${viewBox.h}`}
+        onPointerDownCapture={e => {
+          if (!cad?.pointInput || e.button !== 0 || e.shiftKey) return;
+          e.stopPropagation(); e.preventDefault(); cad.pick(cadMousePoint(e.clientX, e.clientY));
+        }}
+        onPointerMoveCapture={e => { if (cad?.pointInput) cad.setHover(cad.constrain(cadMousePoint(e.clientX, e.clientY))); }}
+        onContextMenu={e => { if (cad) { e.preventDefault(); if (cad.inputRef.current?.form) cad.inputRef.current.form.requestSubmit(); else cad.submit(''); } }}
         onPointerDown={handlePointerDown}
         onPointerMove={handlePointerMove}
         onPointerUp={finishPointer}
@@ -474,17 +532,62 @@ export default function Canvas({ store, showGrid, osnap, osnapLabels = true, vie
         {/* Grid */}
         {showGrid && (
           <>
-            <rect x={viewBox.x} y={viewBox.y} width={viewBox.w} height={viewBox.h} fill="url(#grid)" />
-            <rect x={viewBox.x} y={viewBox.y} width={viewBox.w} height={viewBox.h} fill="url(#grid-major)" />
+            <rect data-testid="canvas-grid-minor" x={visibleBounds.x} y={visibleBounds.y} width={visibleBounds.w} height={visibleBounds.h} fill="url(#grid)" pointerEvents="none" />
+            <rect data-testid="canvas-grid-major" x={visibleBounds.x} y={visibleBounds.y} width={visibleBounds.w} height={visibleBounds.h} fill="url(#grid-major)" pointerEvents="none" />
           </>
         )}
 
         {/* Axes */}
-        <line x1={viewBox.x} y1={0} x2={viewBox.x + viewBox.w} y2={0} stroke={palette.axisX} strokeWidth={viewBox.w * 0.001} />
-        <line x1={0} y1={viewBox.y} x2={0} y2={viewBox.y + viewBox.h} stroke={palette.axisY} strokeWidth={viewBox.w * 0.001} />
+        <line x1={visibleBounds.x} y1={0} x2={visibleBounds.x + visibleBounds.w} y2={0} stroke={palette.axisX} strokeWidth={viewBox.w * 0.001} />
+        <line x1={0} y1={visibleBounds.y} x2={0} y2={visibleBounds.y + visibleBounds.h} stroke={palette.axisY} strokeWidth={viewBox.w * 0.001} />
 
         {/* Y-axis flipped: in engineering, Y is up. We use SVG transform to flip. */}
         <g transform="scale(1, -1)">
+          {/* Draft paths share project history but never contribute structural area. */}
+          {(store.project.drawingEntities ?? []).map(entity => {
+            const delta = draftDelta.id === entity.id ? draftDelta : { x: 0, y: 0 };
+            const anchors = entity.points.map(p => ({ x: p.x + delta.x, y: p.y + delta.y }));
+            const points = ['xline', 'ray'].includes(entity.kind) ? clipCadConstruction({ ...entity, points: anchors }, { x0: visibleBounds.x, y0: -visibleBounds.y - visibleBounds.h, x1: visibleBounds.x + visibleBounds.w, y1: -visibleBounds.y }) ?? [] : cadPathPoints({ ...entity, points: anchors });
+            if (!points.length) return null;
+            const color = store.selectedIds.includes(entity.id) ? '#38bdf8' : palette.axisX;
+            return <g key={entity.id} onPointerDown={e => {
+              if (e.button !== 0 || e.shiftKey) return;
+              e.stopPropagation();
+              if (e.ctrlKey || e.metaKey) {
+                store.selectComponents(store.selectedIds.includes(entity.id) ? store.selectedIds.filter(id => id !== entity.id) : [...store.selectedIds, entity.id]); return;
+              }
+              store.selectComponents([entity.id]);
+              draftDrag.current = { id: entity.id, start: svgToWorld(e.clientX, e.clientY), delta: { x: 0, y: 0 } };
+              svgRef.current?.setPointerCapture(e.pointerId);
+            }} style={{ cursor: 'move' }}>
+              {entity.kind === 'text' ? <g transform={`translate(${points[0].x},${points[0].y}) rotate(${entity.textRotation ?? 0})`}>
+                <text transform="scale(1,-1)" fontSize={entity.textHeight ?? 10} fontFamily="monospace" fill={color}>{(entity.text ?? '').split('\n').map((line, i) => <tspan key={i} x={0} dy={i ? (entity.textHeight ?? 10) * 1.2 : 0}>{line || ' '}</tspan>)}</text>
+              </g> : entity.kind === 'dimension' ? <CadDimension entity={{ ...entity, points }} px={pxNow} color={color} /> : entity.kind === 'point' ? <circle cx={points[0].x} cy={points[0].y} r={viewBox.w * 0.004} fill={color} /> : <>
+                {cadFilledRegions.get(entity.id) && <polygon data-testid="cad-filled-region" data-entity-id={entity.id} data-area={cadFilledRegions.get(entity.id)!.area} points={anchors.map(p => `${p.x},${p.y}`).join(' ')} fill={store.selectedIds.includes(entity.id) ? palette.previewFill : palette.addFill} stroke="none" />}
+                <polyline points={points.map(p => `${p.x},${p.y}`).join(' ')} fill="none" stroke="transparent" strokeWidth={viewBox.w * 0.012} />
+                <polyline points={points.map(p => `${p.x},${p.y}`).join(' ')} fill="none" stroke={color} strokeWidth={viewBox.w * 0.0015} pointerEvents="none" />
+              </>}
+            </g>;
+          })}
+          {cad?.pathConfirmed && <polyline data-testid="cad-confirmed-path" pointerEvents="none" points={cad.pathConfirmed.map(p => `${p.x},${p.y}`).join(' ')} fill="none" stroke="#38bdf8" strokeWidth={pxNow * 1.5} />}
+          {cad?.pathStart && cad.hover && Math.hypot(cad.pathStart.x - cad.hover.x, cad.pathStart.y - cad.hover.y) < 1e-8 && <g pointerEvents="none" data-testid="cad-start-snap">
+            <rect x={cad.pathStart.x - pxNow * 5} y={cad.pathStart.y - pxNow * 5} width={pxNow * 10} height={pxNow * 10} fill="none" stroke="#22c55e" strokeWidth={pxNow * 2} />
+            <text transform="scale(1,-1)" x={cad.pathStart.x + pxNow * 12} y={-cad.pathStart.y + pxNow * 18} fontSize={pxNow * 11} fill="#22c55e">Endpoint (Start) · Close</text>
+          </g>}
+          {cad && cad.stretchOutline.length > 0 && <polygon data-testid="cad-stretch-area" pointerEvents="none" points={cad.stretchOutline.map(p => `${p.x},${p.y}`).join(' ')} fill="rgba(34,197,94,0.08)" stroke="#22c55e" strokeWidth={pxNow} strokeDasharray={`${pxNow * 6} ${pxNow * 4}`} />}
+          {cad?.stretchVertices.map((p, i) => <circle key={`stretch-v-${i}`} pointerEvents="none" cx={p.x} cy={p.y} r={pxNow * 3} fill="#22c55e" />)}
+          {cad?.stretchPreview && <g data-testid="cad-stretch-preview" pointerEvents="none" fill="none" stroke="#38bdf8" strokeWidth={pxNow * 2}>
+            {cad.stretchPreview.components.filter(c => c !== store.project.components.find(original => original.id === c.id)).map(c => <polygon key={c.id} points={computeComponentProps(c).outline.map(p => `${p.x},${p.y}`).join(' ')} />)}
+            {cad.stretchPreview.drawingEntities?.filter(e => e !== store.project.drawingEntities?.find(original => original.id === e.id)).map(e => <g key={e.id}>{cadRegion(e) && <polygon data-testid="cad-region-preview" points={e.points.map(p => `${p.x},${p.y}`).join(' ')} fill={palette.previewFill} stroke="none" />}<polyline points={drawingEntityPoints(e).map(p => `${p.x},${p.y}`).join(' ')} /></g>)}
+          </g>}
+          {cad && !cad.dimensionPreview && cad.preview.length > 0 && <polyline pointerEvents="none" points={cad.preview.map(p => `${p.x},${p.y}`).join(' ')} fill="none" stroke="#38bdf8" strokeWidth={viewBox.w * 0.0015} strokeDasharray={`${viewBox.w * 0.006} ${viewBox.w * 0.004}`} />}
+          {cad?.pointInput && cad.hover && <g pointerEvents="none">
+            <circle cx={cad.hover.x} cy={cad.hover.y} r={pxNow * 3} fill="none" stroke="#38bdf8" strokeWidth={pxNow} />
+            <text transform="scale(1,-1)" x={cad.hover.x + pxNow * 10} y={-cad.hover.y - pxNow * 10} fontSize={pxNow * 11} fontFamily="monospace" fill="#38bdf8" stroke={palette.background} strokeWidth={pxNow * 3} paintOrder="stroke">
+              {cad.hover.x.toFixed(3)}, {cad.hover.y.toFixed(3)}{cad.base ? ` · Δ ${Math.hypot(cad.hover.x - cad.base.x, cad.hover.y - cad.base.y).toFixed(3)}` : ''}
+            </text>
+          </g>}
+          {cad?.dimensionPreview && <g pointerEvents="none"><CadDimension entity={cad.dimensionPreview} px={pxNow} color="#38bdf8" /></g>}
           {/* Components */}
           {store.project.components.filter(c => c.visible).map(comp => (
             <ComponentRenderer
@@ -608,6 +711,7 @@ export default function Canvas({ store, showGrid, osnap, osnapLabels = true, vie
       {/* Coordinate display */}
       <div className="absolute bottom-2 left-2 px-2 py-1 rounded text-[10px] font-mono" style={{ background: palette.overlayBg, color: palette.overlayText }}>
         X: {mouseWorld.x.toFixed(1)} &nbsp; Y: {mouseWorld.y.toFixed(1)} &nbsp; {store.project.units}
+        {cad?.base && cad.hover && <span> &nbsp; Δ={Math.hypot(cad.hover.x - cad.base.x, cad.hover.y - cad.base.y).toFixed(3)}</span>}
         &nbsp;·&nbsp;<span style={{ color: osnap ? palette.snap : undefined, opacity: osnap ? 1 : 0.5 }}>OSNAP {osnap ? 'ON' : 'OFF'}</span>
         &nbsp;·&nbsp;<span style={{ color: osnapLabels ? palette.snap : undefined, opacity: osnapLabels ? 1 : 0.5 }}>DIMS {osnapLabels ? 'ON' : 'OFF'}</span>
       </div>

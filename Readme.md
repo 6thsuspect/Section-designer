@@ -974,3 +974,71 @@ changelog because they may affect previously generated results.
 Built as a practical engineering productivity tool for structural
 engineers who need fast, transparent, and reusable section-property
 calculations.
+
+### MIDAS MCT boundary export
+
+Choose **Export → MIDAS MCT (.mct)** to download a non-tapered
+`*SECT-PSCVALUE` / `VALUE, GEN` section. Set **Section Number** under **Properties → Project Settings** to choose
+the exported `SECT=` ID (positive integer, default 1 for new and older projects). The exporter writes
+the complete default command-comment block from the supplied MIDAS reference,
+then three stiffness/property records followed by `OPOLY` and optional `IPOLY`
+records, with coordinate continuation lines matching the MIDAS command format.
+
+- Visible additive regions are unioned; visible subtractive regions are removed.
+  Hidden components are excluded. Separate material islands are rejected rather
+  than silently lost or joined by fictitious bridges.
+- Coordinates are centroid-relative: app X maps to MIDAS local Y and app Y maps
+  to local Z. A centroid-centre (`CC`) offset is used. `*UNIT` declares the current
+  project length unit; numeric coordinates are not rescaled. Importing this block
+  therefore changes the receiving model's active units. Choose an unused Section Number if
+  the receiving model already contains that section ID.
+- Openings use independent `IPOLY` rings, including openings in combined shapes.
+  Curves are approximated with 256 straight segments per full circle.
+- **Engineering limitation:** shear areas (`ASy`, `ASz`) and first-moment values
+  (`Qyb`, `Qzb`) are zero placeholders. `Ixx` uses the app's approximate torsion
+  calculation. The export confirmation and file comments flag these limitations.
+  Recalculate these properties in MIDAS before structural design; the MCT file
+  has not been import-tested in a licensed MIDAS installation.
+- Only general plane sections are exported; PSC, composite and tapered sections
+  and line/thickness models are not generated.
+
+Run `npm run test:midas` for boundary-export regression checks.
+
+### MIDAS Section.mct import
+
+Choose **Import** (or **Ctrl+I**) and select/drop a `.mct` file. The dialog lists
+sections by number/name; select one and confirm its coordinate unit, then click
+**Import & Calculate**. Import replaces the current project through the existing
+project/history workflow and fits the imported section to the canvas.
+
+- Supports non-tapered `VALUE / GEN` polygon sections in `*SECT-PSCVALUE`, including
+  continued `OPOLY` coordinates and multiple `IPOLY` openings. Section number,
+  section name and `*UNIT` length units are retained; absent units default to mm
+  with an explicit warning and a unit selector.
+- MIDAS local Y/Z coordinates map to app X/Y. Boundary geometry is authoritative:
+  properties are recalculated, not copied from MIDAS stiffness rows. Default
+  steel is assigned and must be reviewed. Member offsets, loads and MIDAS
+  material assignments are not imported.
+- Multiple sections are **not** overlaid: import one selected section at a time.
+  Invalid/crossing boundaries, touching/overlapping openings, duplicate section
+  numbers and unsupported units are rejected. PSC, composite, tapered, database
+  and General-LINE (`VERTEX`/`LINE`/`LOOP`) definitions are not supported and do not
+  produce approximate geometry. Unrelated model commands are ignored.
+- `npm run test:midas` covers export, import round trips, holes/properties,
+  multi-section selection, units, invalid input and import-dialog interactions
+  (jsdom).
+
+### Optional AutoCAD Mode
+
+The top-toolbar **AutoCAD Mode** toggle enables command-driven drawing, a
+resizable command window, drafting paths, precision controls, and shared undo/redo.
+It is off by default. See [CAD_MODE.md](CAD_MODE.md) for the supported commands,
+coordinate syntax, engineering safeguards, deferred operations, and tests.
+
+### CADCraft-inspired native command expansion
+
+A first native integration batch adds 21 drawing/modify commands while preserving
+the existing section canvas and shared undo/redo. See
+[CADCRAFT_INTEGRATION.md](CADCRAFT_INTEGRATION.md) for supported behavior, upstream
+command inventory, license credit, and the remaining integration roadmap. This
+is progressive integration, not a claim of complete CADCraft feature parity.
