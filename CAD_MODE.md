@@ -47,6 +47,10 @@ LINE
   radius and ellipse semi-axes can also be picked on the canvas. Previews do not
   mutate the project. ORTHO/POLAR/grid SNAP constrain **mouse** input; explicit
   typed coordinates are authoritative.
+- Selection-window corners (including SELECT and STRETCH window/CP acquisition)
+  follow the actual cursor, bypassing drawing ORTHO/POLAR/grid/object snaps.
+  Selection never toggles those settings; ORTHO resumes for drawing or modify
+  displacement points after selection. Idle Window/Crossing drags remain free.
 - LINE/PLINE: continue adding points; `Undo` removes the last pending point;
   `Close`/`C` or snapping to the first point closes the path exactly. The initial
   endpoint gets a green square snap marker, even with ORTHO enabled. Confirmed

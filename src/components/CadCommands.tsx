@@ -521,7 +521,22 @@ export function useCad(options: CadOptions) {
     window.addEventListener('keydown', key, true);
     return () => window.removeEventListener('keydown', key, true);
   }, [options.enabled]);
-  const base = session?.values.filter((v) => typeof v === 'object').at(-1) as Point | undefined;
+  // Selection acquisition is not geometric point placement. Keep ORTHO/POLAR/SNAP
+  // state untouched, but bypass their cursor constraints for every selection corner.
+  const selectionInput =
+    !!session &&
+    (session.command.name === 'SELECT' ||
+      (session.command.name === 'STRETCH' &&
+        !session.stretchArea &&
+        (session.stretchPolygon || session.values.length < 2)));
+  const stretchAwaitingBase =
+    session?.command.name === 'STRETCH' &&
+    !session.stretchArea &&
+    !session.stretchPolygon &&
+    session.values.length === 2;
+  const base = stretchAwaitingBase
+    ? undefined
+    : (session?.values.filter((v) => typeof v === 'object').at(-1) as Point | undefined);
   const radiusInput =
     !!session &&
     ['CIRCLE', 'ELLIPSE', 'POLYGON'].includes(session.command.name) &&
@@ -538,6 +553,7 @@ export function useCad(options: CadOptions) {
       ? (session.values[0] as Point)
       : null;
   const constrain = (p: Point) => {
+    if (selectionInput || !pointInput) return p;
     if (pathStart && sameCadPoint(pathStart, p)) return pathStart;
     let pt = snap
       ? {
@@ -684,6 +700,7 @@ export function useCad(options: CadOptions) {
     spacing,
     preview,
     pointInput,
+    selectionInput,
     constrain,
     base,
     hover,

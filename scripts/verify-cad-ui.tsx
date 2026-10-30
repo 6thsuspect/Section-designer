@@ -706,6 +706,169 @@ async function main() {
     'closed flag supports engineering conversion: ' +
       document.querySelector('[role="log"]')?.textContent?.slice(-1500),
   );
+  // ORTHO affects geometric placement, never selection acquisition.
+  await submit('ZOOM');
+  await submit('RESET');
+  await submit('ORTHO');
+  await submit('OFF');
+  await act(async () =>
+    window.dispatchEvent(
+      new dom.window.KeyboardEvent('keydown', {
+        key: 'F8',
+        bubbles: true,
+        cancelable: true,
+      }),
+    ),
+  );
+  const orthoButton = () => buttons().find((b) => b.textContent === 'ORTHO')!;
+  assert.equal(orthoButton().getAttribute('aria-pressed'), 'true');
+  const pointer = async (type: string, x: number, y: number) => {
+    await act(async () =>
+      svg.dispatchEvent(
+        new dom.window.MouseEvent(type, {
+          bubbles: true,
+          clientX: x,
+          clientY: y,
+          button: 0,
+        }),
+      ),
+    );
+  };
+  const escapeCad = async () => {
+    await act(async () =>
+      input().dispatchEvent(
+        new dom.window.KeyboardEvent('keydown', {
+          key: 'Escape',
+          bubbles: true,
+          cancelable: true,
+        }),
+      ),
+    );
+  };
+  await submit('OSNAP');
+  await submit('OFF');
+  await submit('SNAP');
+  await submit('OFF');
+  await submit('LINE');
+  await submit('0,0');
+  await pointer('pointermove', 520, 330);
+  assert.ok(
+    svg.querySelector('polyline[points="0,0 120,0"]'),
+    'F8 constrains drawing horizontally',
+  );
+  await pointer('pointermove', 470, 280);
+  assert.ok(
+    svg.querySelector('polyline[points="0,0 0,120"]'),
+    'F8 constrains drawing vertically',
+  );
+  await escapeCad();
+  await submit('RECTANGLE');
+  await submit('-330,-330');
+  await submit('-310,-310');
+  await submit('RECTANGLE');
+  await submit('-290,-330');
+  await submit('-270,-310');
+  // jsdom lacks the browser's pointer-capture methods used by drag selection.
+  svg.setPointerCapture = () => {};
+  svg.hasPointerCapture = () => false;
+  for (const enabled of [true, false]) {
+    await submit('ORTHO');
+    await submit(enabled ? 'ON' : 'OFF');
+    await pointer('pointerdown', 40, 740);
+    await pointer('pointermove', 150, 690);
+    assert.ok(
+      svg.textContent?.includes('WINDOW · 110.0 × 50.0 · 2 objects'),
+      'diagonal window has full width/height and multiple hits',
+    );
+    await pointer('pointerup', 150, 690);
+    await submit('LIST');
+    assert.ok(
+      document.querySelector('[role="log"]')?.textContent?.includes('position=-320,-320'),
+    );
+    assert.ok(
+      document.querySelector('[role="log"]')?.textContent?.includes('position=-280,-320'),
+    );
+    await pointer('pointerdown', 120, 725);
+    await pointer('pointermove', 80, 715);
+    assert.ok(
+      svg.textContent?.includes('CROSSING · 40.0 × 10.0 · 2 objects'),
+      'right-to-left selection crosses both rectangles without enclosing them',
+    );
+    await pointer('pointerup', 80, 715);
+    assert.equal(orthoButton().getAttribute('aria-pressed'), String(enabled));
+  }
+  await submit('ORTHO');
+  await submit('ON');
+  // Selection can feed ordinary preselected modify commands without changing F8 state.
+  await submit('MOVE');
+  await submit('0,0');
+  await submit('10,0');
+  assert.ok(document.querySelector('[role="log"]')?.textContent?.endsWith('MOVE completed.'));
+  await submit('COPY');
+  await submit('0,0');
+  await submit('0,-20');
+  assert.ok(document.querySelector('[role="log"]')?.textContent?.endsWith('COPY completed.'));
+  assert.equal(orthoButton().getAttribute('aria-pressed'), 'true');
+  await submit('OSNAP');
+  await submit('ON');
+  await submit('SNAP');
+  await submit('ON');
+  await submit('SELECT');
+  await submit('WINDOW');
+  await submit('-100,-100');
+  await pointer('pointermove', 481.5, 413.25);
+  assert.ok(
+    svg.querySelector('polyline[points="-100,-100 81.5,-13.25"]'),
+    'SELECT corners bypass drawing snaps and ORTHO',
+  );
+  await escapeCad();
+  await submit('STRETCH');
+  await submit('-100,-100');
+  await pointer('pointermove', 481.5, 413.25);
+  assert.equal(
+    svg.querySelector('[data-testid="cad-stretch-area"]')?.getAttribute('points'),
+    '-100,-100 81.5,-100 81.5,-13.25 -100,-13.25',
+    'STRETCH window follows exact diagonal cursor',
+  );
+  await pointer('pointerdown', 481.5, 413.25);
+  await pointer('pointermove', 520, 330);
+  assert.ok(
+    svg.textContent?.includes('120.000, 70.000'),
+    'STRETCH base point is not constrained relative to a selection corner',
+  );
+  await submit('0,0');
+  await pointer('pointermove', 520, 330);
+  assert.ok(
+    svg.textContent?.includes('120.000, 0.000'),
+    'ORTHO resumes for STRETCH displacement',
+  );
+  await escapeCad();
+  await submit('STRETCH');
+  await submit('CP');
+  await submit('-100,-100');
+  await pointer('pointermove', 330, 450);
+  assert.ok(
+    svg.querySelector('polyline[points="-100,-100 -70,-50"]'),
+    'crossing-polygon vertices are also unrestricted',
+  );
+  await escapeCad();
+  assert.equal(
+    orthoButton().getAttribute('aria-pressed'),
+    'true',
+    'selection never disables ORTHO globally',
+  );
+  await submit('OSNAP');
+  await submit('OFF');
+  await submit('SNAP');
+  await submit('OFF');
+  await submit('PLINE');
+  await submit('0,0');
+  await pointer('pointermove', 520, 330);
+  assert.ok(
+    svg.querySelector('polyline[points="0,0 120,0"]'),
+    'drawing constraints resume immediately after selection',
+  );
+  await escapeCad();
   await act(async () => root.unmount());
   console.log(
     'CAD UI checks passed: full app mode isolation, prompts, native drawing, draft paths, invalid input recovery, modifications, undo/redo, cancellation, extents, collapse and floating.',

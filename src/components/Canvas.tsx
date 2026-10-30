@@ -477,6 +477,8 @@ export default function Canvas({ store, showGrid, osnap, osnapLabels = true, vie
   }, [cadActive, store.project.components, store.project.drawingEntities]);
   const cadMousePoint = (clientX: number, clientY: number): Point => {
     const world = svgToWorld(clientX, clientY);
+    // Window corners follow the real cursor, not drawing snaps or axis constraints.
+    if (cad?.selectionInput) return world;
     const tolerance = SNAP_APERTURE_PX / getViewTransform().scale;
     if (cad?.pathStart && Math.hypot(world.x - cad.pathStart.x, world.y - cad.pathStart.y) <= tolerance) return cad.pathStart;
     if (!osnap) return world;
