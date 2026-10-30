@@ -162,3 +162,38 @@ coordinate LINE closure, C closure, active Undo, Escape completion, polygon stre
 preview/cancel/confirm, opposite-side invariance, X/Y/XY geometry, shared undo/redo,
 BOUNDARY conversion, offset/trim, closing-edge selection/explode, JSON and DXF.
 UI verification uses jsdom, not a real-browser visual audit.
+
+## Coordinate plates and combined-source STRETCH
+
+`cadStretchGeometry.ts` extends the existing crossing-area vertex mask, not a new
+geometry engine. It nodes real plate boundaries at shared vertices, collinear
+contacts and edge intersections before displacement. This handles web-to-flange
+T-junctions even when the flange originally has only four corner coordinates.
+Inserted junctions are retained as ordinary custom-polygon vertices. Selected
+vertices use the same world-coordinate displacement in every participating plate;
+unselected vertices remain fixed. Polygon rings and voids are validated before
+commit. Fully enclosed geometry still translates; partial STRETCH is not MOVE.
+
+The existing `combinedFrom` hierarchy is authoritative for grouped plates. A pure
+rebuild uses `combineComponents` and its existing polygon-clipping union/difference
+to update the display material and source members atomically. Group IDs, leaf IDs,
+material/operation metadata, and nested grouping survive. Uncombine materializes
+those latest sources in the parent pose. Optional `combinedSourceFrame` records
+that pose; legacy files recover it from their saved source union. No external
+engine, independent plate-copy layer, database migration or canvas redesign.
+
+Source frames also keep grouped MOVE/COPY/ROTATE/SCALE/MIRROR consistent; copies
+allocate fresh source IDs. Nested additive unions use synchronized leaf regions
+to avoid tiny cracks from repeatedly expanding local-centroid outlines. Existing
+Delete Void/remove-overlap behavior is retained: parent-only edits invalidate
+source-frame synchronization; STRETCH/transform rejects divergent material rather
+than undoing that edit implicitly. Associated bolt-deduction restrictions and
+existing OFFSET/TRIM target limits remain explicit; this is not full AutoCAD parity.
+
+`npm run test:cad` now includes `verify-cad-grouped-stretch.mts` and
+`verify-cad-grouped-ui.tsx`: individual/grouped flange/web edits, T-junctions,
+inclined and imported DXF plates, multi-ring voids, source IDs, nested/legacy/posed
+groups, transforms, serialization, independent edits after Uncombine, regrouping,
+non-destructive preview/cancel, and the real store's atomic Undo/Redo through
+STRETCH and Uncombine. These are geometry and jsdom controller/store tests, not
+a real-browser performance or visual audit.

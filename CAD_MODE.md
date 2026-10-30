@@ -99,8 +99,12 @@ not the boolean union of the selection.
   before specifying base and destination. `U` undoes a polygon vertex. Vertices
   on or inside the crossing area move; vertices outside stay put. Fully enclosed objects translate.
   Partially stretched rectangles/triangles become editable custom-shape polygons.
-  Partial stretching supports solid polygonal sections and draft line/polyline
-  vertices. Curves, hollow sections and arcs must be fully enclosed to translate;
+  Partial stretching supports coordinate-defined plates, multi-ring custom sections,
+  combined plate groups and draft line/polyline vertices. Shared plate edges are
+  split at their junctions so a web endpoint on a flange edge belongs to both
+  boundaries. Combined groups are rebuilt from updated source plates, preserving
+  their IDs and nesting; Uncombine returns the latest stretched coordinates.
+  Curved/hollow analytic primitives and arcs must be fully enclosed to translate;
   associated components still require the existing component tools. Empty windows,
   zero displacement and self-crossing results fail without changing the project.
   Green vertex markers show the actual selected mask. The blue geometry preview
@@ -143,9 +147,17 @@ not the boolean union of the selection.
   closed polyline becomes one open polyline with the same ID (no artificial
   closing edge). Cuts leaving multiple disconnected chains are rejected; split
   complex paths first. EXPLODE includes the closing edge.
-- Locked components are excluded from modifications. Associated bolt deductions
-  and combined components must use the existing component tools/uncombine first;
-  command modifications fail safely rather than damage parent/child associations.
+- Locked components are excluded from modifications. A stretch that would detach
+  a connected locked plate is rejected. Associated bolt deductions still require
+  the existing component tools. Parent-only boundary edits (such as Delete Void)
+  must be uncombined before STRETCH/transform, rather than silently restoring
+  stale source material.
+- Combined plate groups support MOVE/COPY/ROTATE/SCALE/MIRROR with synchronized
+  sources; copies receive new group and source IDs. OFFSET/TRIM retain their
+  documented draft-path/analytic-section target limits; their algorithms are unchanged.
+- The optional combined source frame preserves parent movement/rotation when
+  uncombining. Older saved groups recover their original frame on demand; JSON
+  preserves the new metadata without a schema migration.
 - Old projects need no migration: `drawingEntities` is optional. JSON import validates
   new draft paths and rejects malformed points, unsupported kinds and duplicate IDs.
 

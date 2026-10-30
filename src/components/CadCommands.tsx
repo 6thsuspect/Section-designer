@@ -1,4 +1,5 @@
 'use client';
+import { stretchComponentVertices } from '@/engine/cadStretchGeometry';
 import { isClosedCadPath, uniqueCadVertices, sameCadPoint } from '@/engine/cadPath';
 import {
   inStretchArea,
@@ -653,9 +654,7 @@ export function useCad(options: CadOptions) {
   }
   const stretchVertices = stretchArea
     ? [
-        ...options.store.project.components
-          .filter((c) => c.visible && !c.locked)
-          .flatMap((c) => computeComponentProps(c).outline),
+        ...stretchComponentVertices(options.store.project.components),
         ...(options.store.project.drawingEntities ?? []).flatMap((e) => e.points),
       ].filter((p) => inStretchArea(p, stretchArea!))
     : [];

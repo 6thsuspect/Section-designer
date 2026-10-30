@@ -1,9 +1,17 @@
+import { stretchPlateComponents } from './cadStretchGeometry';
 import { cadPathPoints, sameCadPoint } from './cadPath';
 import { inStretchArea, validateStretchPolygon, type CadStretchArea } from './cadStretchArea';
 import { CAD_EXTENDED_COMMANDS } from './cadExtendedCatalog';
 import type { Point, SectionComponent, SectionProject, LengthUnit } from './types';
 import { computeComponentProps, segmentsIntersect, pointInRect } from './geometry';
-import { componentRegion, keyholeAll, signedArea } from './combine';
+import {
+  combinedMembersInWorld,
+  rebuildCombinedComponent,
+  sameComponentMaterial,
+  componentRegion,
+  keyholeAll,
+  signedArea,
+} from './combine';
 
 export interface DrawingEntity {
   id: string;
@@ -97,7 +105,7 @@ export const CAD_COMMANDS: CadCommand[] = [
   command(
     'STRETCH',
     'S',
-    'Crossing window or CP crossing polygon selects vertices; specify base and destination. Partial stretch supports solid polygonal components and draft paths; fully enclosed objects move.',
+    'Crossing window or CP crossing polygon selects vertices; specify base and destination. Partial stretch supports coordinate-defined plates, combined source plates and draft paths; fully enclosed objects move.',
     [
       'First crossing-window corner or [CPolygon]:',
       'Opposite crossing-window corner:',
@@ -515,9 +523,9 @@ export function transformCadSelection(
     return { x: a.x + r * Math.cos(angle), y: a.y + r * Math.sin(angle) };
   };
   const selected = project.components.filter((c) => ids.includes(c.id) && !c.locked);
-  if (selected.some((c) => c.combinedFrom || c.parentId || c.geometry.boltDeductions))
+  if (selected.some((c) => c.parentId || c.geometry.boltDeductions))
     throw new Error(
-      'Associated/combined components must be uncombined or edited with the existing component tools first.',
+      'Associated bolt deductions must be edited with the existing component tools first.',
     );
   const selectedDrafts = (project.drawingEntities ?? []).filter((c) => ids.includes(c.id));
   if (!selected.length && !selectedDrafts.length)
@@ -525,6 +533,59 @@ export function transformCadSelection(
   // Preserve analytic primitives for movement/rotation. Mirroring uses
   // polygon rings (curves tessellated), preserving holes and cutout operation.
   const changed = selected.map((c) => {
+    if (c.combinedFrom) {
+      const sources = combinedMembersInWorld(c);
+      if (sources.some((member) => member.parentId || member.geometry.boltDeductions))
+        throw new Error(
+          'Associated bolt deductions must be edited with the existing component tools first.',
+        );
+      if (!sameComponentMaterial(c, rebuildCombinedComponent(c, sources)))
+        throw new Error(
+          'Combined boundary has independent edits; uncombine its source plates before transforming.',
+        );
+      // A common world origin keeps shared polygon vertices bit-identical during
+      // rotation; rotating each plate around a different local origin can leave
+      // tiny cracks that make boolean union fail on coincident edges.
+      const members = sources.map((member) => {
+        if (
+          name !== 'ROTATE' ||
+          member.combinedFrom ||
+          !['rectangle', 'triangle', 'polygon', 'custom-shape'].includes(member.type)
+        )
+          return member;
+        const rings = componentWorldRings(member);
+        return {
+          ...member,
+          type: 'custom-shape' as const,
+          position: { x: 0, y: 0 },
+          rotation: 0,
+          geometry: { points: keyholeAll(rings), rings },
+        };
+      });
+      if (members.some((member) => member.locked || !member.visible))
+        throw new Error('Unlock/show source plates before transforming a combined section.');
+      const sourceIds = new Set(members.map((member) => member.id));
+      const transformed = transformCadSelection(
+        { ...project, components: members, drawingEntities: [] },
+        [...sourceIds],
+        name,
+        values,
+      );
+      const changedMembers = copy
+        ? transformed.components.filter((member) => !sourceIds.has(member.id))
+        : transformed.components;
+      return rebuildCombinedComponent({ ...c, id: copy ? id() : c.id }, changedMembers);
+    }
+    if (c.type === 'triangle' && name === 'ROTATE') {
+      const rings = componentWorldRings(c).map((ring) => ring.map(map));
+      return {
+        ...c,
+        type: 'custom-shape' as const,
+        position: { x: 0, y: 0 },
+        rotation: 0,
+        geometry: { points: keyholeAll(rings), rings },
+      };
+    }
     if (name === 'MOVE' || name === 'COPY' || name === 'ROTATE')
       return {
         ...c,
@@ -744,36 +805,9 @@ export function stretchCad(
     dy = destination.y - base.y;
   if (!dx && !dy) throw new Error('Stretch displacement must be non-zero.');
   const move = (p: Point) => ({ x: p.x + dx, y: p.y + dy });
-  let count = 0;
-  const components = project.components.map((c) => {
-    if (!c.visible || c.locked) return c;
-    const rings = componentWorldRings(c),
-      points = rings.flat();
-    if (!points.some(inside)) return c;
-    if (c.combinedFrom || c.parentId || c.geometry.boltDeductions)
-      throw new Error('Use existing tools for associated or combined components.');
-    count++;
-    if (points.every(inside)) return { ...c, position: move(c.position) };
-    if (
-      !['rectangle', 'triangle', 'polygon', 'custom-shape'].includes(c.type) ||
-      rings.length !== 1
-    )
-      throw new Error(
-        'Partial STRETCH supports solid polygonal components only; enclose curved/hollow objects fully to move them.',
-      );
-    const stretched = rings[0].map((p) => (inside(p) ? move(p) : p));
-    const validated = cadSectionBoundary(
-      { ...project, components: [], drawingEntities: [] },
-      stretched,
-    ).components[0];
-    return {
-      ...validated,
-      id: c.id,
-      name: c.name,
-      operation: c.operation,
-      materialId: c.materialId,
-    };
-  });
+  const plateResult = stretchPlateComponents(project.components, inside, move);
+  const components = plateResult.components;
+  let count = plateResult.count;
   const drawingEntities = project.drawingEntities?.map((entity) => {
     if (!entity.points.some(inside)) return entity;
     if (['arc', 'xline', 'ray'].includes(entity.kind) && !entity.points.every(inside))
