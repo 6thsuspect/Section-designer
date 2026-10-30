@@ -1,10 +1,14 @@
+import { CAD_EXTENDED_COMMANDS } from './cadExtendedCatalog';
 import type { Point, SectionComponent, SectionProject, LengthUnit } from './types';
 import { computeComponentProps, segmentsIntersect, pointInRect } from './geometry';
 import { componentRegion, keyholeAll, signedArea } from './combine';
 
 export interface DrawingEntity {
   id: string;
-  kind: 'line' | 'polyline' | 'arc' | 'point' | 'dimension';
+  kind: 'line' | 'polyline' | 'arc' | 'point' | 'dimension' | 'text' | 'xline' | 'ray';
+  text?: string;
+  textHeight?: number;
+  textRotation?: number;
   dimensionStyle?: 'linear' | 'aligned';
   dimensionAxis?: Point;
   points: Point[];
@@ -14,7 +18,7 @@ export interface CadCommand {
   aliases: string[];
   help: string;
   prompts: string[];
-  types: ('point' | 'positive' | 'number' | 'integer' | 'text')[];
+  types: ('point' | 'positive' | 'number' | 'integer' | 'count' | 'text')[];
 }
 const command = (
   name: string,
@@ -24,6 +28,7 @@ const command = (
   types: CadCommand['types'],
 ): CadCommand => ({ name, aliases: aliases.split(' ').filter(Boolean), help, prompts, types });
 export const CAD_COMMANDS: CadCommand[] = [
+  ...CAD_EXTENDED_COMMANDS,
   command(
     'LINE',
     'L',
@@ -40,7 +45,7 @@ export const CAD_COMMANDS: CadCommand[] = [
   ),
   command(
     'RECTANGLE',
-    'REC',
+    'REC RECTANG',
     'Section rectangle from opposite corners.',
     ['Specify first corner:', 'Specify opposite corner:'],
     ['point', 'point'],
@@ -68,7 +73,7 @@ export const CAD_COMMANDS: CadCommand[] = [
   ),
   command(
     'ARC',
-    '',
+    'A',
     'Draft arc through start, intermediate and end points.',
     ['Start point:', 'Point on arc:', 'End point:'],
     ['point', 'point', 'point'],
@@ -226,7 +231,7 @@ export function cadNumber(text: string, unit: LengthUnit, dimensional = true): n
 }
 export function cadPoint(text: string, previous: Point | undefined, unit: LengthUnit): Point {
   const relative = text.startsWith('@');
-  const input = relative ? text.slice(1) : text;
+  const input = relative ? text.slice(1) : text.replace(/^#/, '');
   if (relative && !previous) throw new Error('Relative input requires a previous point.');
   let p: Point;
   if (input.includes('<')) {
@@ -269,8 +274,14 @@ export function parseCadValue(session: CadSession, input: string, unit: LengthUn
   const n = cadNumber(
     input,
     unit,
-    !['ROTATE', 'SCALE', 'POLYGON'].includes(c.name) || (c.name === 'POLYGON' && values.length > 0),
+    type !== 'count' &&
+      c.name !== 'ARRAYPOLAR' &&
+      !(['TEXT', 'MTEXT'].includes(c.name) && values.length === 2) &&
+      (!['ROTATE', 'SCALE', 'POLYGON'].includes(c.name) ||
+        (c.name === 'POLYGON' && values.length > 0)),
   );
+  if (type === 'count' && (!Number.isInteger(n) || n < 1 || n > 1000))
+    throw new Error('Use a whole count from 1 to 1000.');
   if ((type === 'positive' || type === 'integer') && n <= 0)
     throw new Error('Value must be greater than zero.');
   if (type === 'integer' && (!Number.isInteger(n) || n < 3 || n > 1024))
@@ -501,8 +512,29 @@ export function transformCadSelection(
     ...e,
     id: copy ? id() : e.id,
     points: e.points.map(map),
+    ...(e.kind === 'text'
+      ? {
+          textHeight: e.textHeight! * (name === 'SCALE' ? (values[1] as number) : 1),
+          textRotation: (() => {
+            const radians = ((e.textRotation ?? 0) * Math.PI) / 180;
+            const axis = mappedAxis({ x: Math.cos(radians), y: Math.sin(radians) }, a, map);
+            return (Math.atan2(axis.y, axis.x) * 180) / Math.PI;
+          })(),
+        }
+      : {}),
     ...(e.dimensionAxis ? { dimensionAxis: mappedAxis(e.dimensionAxis, a, map) } : {}),
   }));
+  if (
+    drafts.some(
+      (e) =>
+        e.kind === 'text' &&
+        (!Number.isFinite(e.textHeight) ||
+          e.textHeight! <= 0 ||
+          e.textHeight! > 1e12 ||
+          !Number.isFinite(e.textRotation)),
+    )
+  )
+    throw new Error('Transformation would invalidate text size or orientation.');
   if (
     drafts.some(
       (e) =>
@@ -523,7 +555,7 @@ export function transformCadSelection(
         ) ||
         (c.geometry.points ?? []).some((p) => !finite(p)),
     ) ||
-    drafts.some((e) => e.points.some((p) => !finite(p)))
+    drafts.some((e) => drawingEntityPoints(e).some((p) => !finite(p)))
   )
     throw new Error('Transformation exceeds the supported coordinate range (±1e12).');
   return {
@@ -550,6 +582,14 @@ export function draftInRect(
   rect: { x0: number; y0: number; x1: number; y1: number },
   crossing = false,
 ): boolean {
+  if (entity.kind === 'xline' || entity.kind === 'ray')
+    return crossing && clipCadConstruction(entity, rect) !== null;
+  if (entity.kind === 'text') {
+    const points = drawingEntityPoints(entity);
+    return crossing
+      ? points.some((p) => pointInRect(p, rect.x0, rect.y0, rect.x1, rect.y1))
+      : points.every((p) => pointInRect(p, rect.x0, rect.y0, rect.x1, rect.y1));
+  }
   if (entity.kind === 'dimension') {
     const segments = dimensionGeometry(entity).segments;
     return crossing
@@ -656,7 +696,7 @@ export function stretchCad(project: SectionProject, values: CadValue[]): Section
   });
   const drawingEntities = project.drawingEntities?.map((entity) => {
     if (!entity.points.some(inside)) return entity;
-    if (entity.kind === 'arc' && !entity.points.every(inside))
+    if (['arc', 'xline', 'ray'].includes(entity.kind) && !entity.points.every(inside))
       throw new Error('Partially stretching an arc is not supported; enclose it fully to move.');
     count++;
     return { ...entity, points: entity.points.map((p) => (inside(p) ? move(p) : p)) };
@@ -718,5 +758,52 @@ export function makeCadDimension(
 }
 
 export function drawingEntityPoints(entity: DrawingEntity): Point[] {
+  if (entity.kind === 'text') {
+    const lines = (entity.text ?? '').split('\n'),
+      height = entity.textHeight ?? 10;
+    const width = Math.max(...lines.map((line) => line.length), 1) * height * 0.7;
+    const radians = ((entity.textRotation ?? 0) * Math.PI) / 180,
+      origin = entity.points[0];
+    return [
+      { x: 0, y: height },
+      { x: width, y: height },
+      { x: width, y: -(lines.length - 1) * height * 1.2 },
+      { x: 0, y: -(lines.length - 1) * height * 1.2 },
+    ].map((p) => ({
+      x: origin.x + p.x * Math.cos(radians) - p.y * Math.sin(radians),
+      y: origin.y + p.x * Math.sin(radians) + p.y * Math.cos(radians),
+    }));
+  }
   return entity.kind === 'dimension' ? dimensionGeometry(entity).segments.flat() : entity.points;
+}
+
+/** Clip infinite construction geometry only for display/hit-testing, never its stored anchors. */
+export function clipCadConstruction(
+  entity: DrawingEntity,
+  bounds: { x0: number; y0: number; x1: number; y1: number },
+): Point[] | null {
+  const [a, b] = entity.points,
+    dx = b.x - a.x,
+    dy = b.y - a.y;
+  let lo = entity.kind === 'ray' ? 0 : -Infinity,
+    hi = Infinity;
+  for (const [origin, direction, min, max] of [
+    [a.x, dx, Math.min(bounds.x0, bounds.x1), Math.max(bounds.x0, bounds.x1)],
+    [a.y, dy, Math.min(bounds.y0, bounds.y1), Math.max(bounds.y0, bounds.y1)],
+  ]) {
+    if (Math.abs(direction) < 1e-15) {
+      if (origin < min || origin > max) return null;
+      continue;
+    }
+    const t1 = (min - origin) / direction,
+      t2 = (max - origin) / direction;
+    lo = Math.max(lo, Math.min(t1, t2));
+    hi = Math.min(hi, Math.max(t1, t2));
+    if (lo > hi) return null;
+  }
+  if (!Number.isFinite(lo) || !Number.isFinite(hi)) return null;
+  return [
+    { x: a.x + dx * lo, y: a.y + dy * lo },
+    { x: a.x + dx * hi, y: a.y + dy * hi },
+  ];
 }

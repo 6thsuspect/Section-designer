@@ -110,7 +110,7 @@ async function main() {
   await submit('0,0');
   await submit('20');
   assert.ok(document.body.textContent?.includes('POLYGON completed.'));
-  await submit('TRIM');
+  await submit('HATCH');
   assert.ok(
     document.body.textContent?.includes('Unknown command. HELP lists only implemented commands.'),
   );
@@ -389,6 +389,132 @@ async function main() {
   );
   await space('sc');
   await submit('CANCEL');
+  // Native CADCraft-style command sessions use the same canvas and history.
+  await submit('ID');
+  await submit('#10,20');
+  await submit('');
+  assert.ok(
+    document.querySelector('header')?.textContent?.includes('ID'),
+    'blank Enter should repeat last command',
+  );
+  await submit('CANCEL');
+  await submit('C');
+  await submit('2P');
+  await submit('6000,6000');
+  await submit('6020,6000');
+  assert.ok(document.querySelector('[role="log"]')?.textContent?.includes('CIRCLE2P completed.'));
+  await submit('DO');
+  await submit('10');
+  await submit('20');
+  await submit('7000,7000');
+  await submit('SPL');
+  await submit('8000,8000');
+  await submit('8010,8010');
+  await submit('8020,8000');
+  await submit('');
+  assert.ok(document.querySelector('[role="log"]')?.textContent?.includes('SPLINE completed.'));
+  await submit('TEXT');
+  await submit('100,100');
+  await submit('10');
+  await submit('0');
+  await typeDraft('"Annotation');
+  await act(async () =>
+    input().dispatchEvent(
+      new dom.window.KeyboardEvent('keydown', {
+        key: ' ',
+        code: 'Space',
+        bubbles: true,
+        cancelable: true,
+      }),
+    ),
+  );
+  assert.ok(
+    document.querySelector('header')?.textContent?.includes('TEXT'),
+    'space within quoted content must remain text editing',
+  );
+  await submit('"Annotation text"');
+  assert.ok(svg.textContent?.includes('Annotation text'));
+  await submit('XL');
+  await submit('30000,30000');
+  await submit('30001,30001');
+  assert.ok(document.querySelector('[role="log"]')?.textContent?.includes('XLINE completed.'));
+  await submit('L');
+  await submit('5000,5000');
+  await submit('5100,5000');
+  await submit('');
+  await submit('SELECT');
+  await submit('WINDOW');
+  await submit('4999,4999');
+  await submit('5101,5001');
+  await submit('O');
+  await submit('10');
+  await submit('5000,5020');
+  assert.ok(document.querySelector('[role="log"]')?.textContent?.includes('OFFSET completed.'));
+  await submit('TR');
+  await submit('5050,4900');
+  await submit('5050,5100');
+  await submit('5000,5000');
+  assert.ok(document.querySelector('[role="log"]')?.textContent?.includes('TRIM completed.'));
+  await submit('EX');
+  await submit('5200,4900');
+  await submit('5200,5100');
+  await submit('5100,5000');
+  assert.ok(document.querySelector('[role="log"]')?.textContent?.includes('EXTEND completed.'));
+  await submit('BR');
+  await submit('5070,5000');
+  await submit('5130,5000');
+  assert.ok(document.querySelector('[role="log"]')?.textContent?.includes('BREAK completed.'));
+  await submit('L');
+  await submit('10010,10000');
+  await submit('10000,10000');
+  await submit('');
+  await submit('L');
+  await submit('10000,10000');
+  await submit('10000,10010');
+  await submit('');
+  await submit('SELECT');
+  await submit('WINDOW');
+  await submit('9999,9999');
+  await submit('10011,10011');
+  await submit('F');
+  await submit('2');
+  await submit('10010,10000');
+  await submit('10000,10010');
+  assert.ok(document.querySelector('[role="log"]')?.textContent?.includes('FILLET completed.'));
+  await submit('UNDO');
+  await submit('CHA');
+  await submit('2');
+  await submit('3');
+  await submit('10010,10000');
+  await submit('10000,10010');
+  assert.ok(document.querySelector('[role="log"]')?.textContent?.includes('CHAMFER completed.'));
+  await submit('SELECT');
+  await submit('WINDOW');
+  await submit('9999,9999');
+  await submit('10011,10011');
+  await submit('J');
+  assert.ok(document.querySelector('[role="log"]')?.textContent?.includes('JOIN completed.'));
+  await submit('SELECT');
+  await submit('WINDOW');
+  await submit('9999,9999');
+  await submit('10011,10011');
+  await submit('X');
+  assert.ok(document.querySelector('[role="log"]')?.textContent?.includes('EXPLODE completed.'));
+  await submit('ZOOM');
+  await submit('RESET');
+  await submit('L');
+  await submit('0,0');
+  await act(async () =>
+    svg.dispatchEvent(
+      new dom.window.MouseEvent('pointermove', { bubbles: true, clientX: 500, clientY: 400 }),
+    ),
+  );
+  await submit('25');
+  await submit('');
+  assert.ok(
+    svg.querySelector('polyline[points="0,0 25,0"]'),
+    'direct distance follows the cursor direction',
+  );
   await act(async () => root.unmount());
   console.log(
     'CAD UI checks passed: full app mode isolation, prompts, native drawing, draft paths, invalid input recovery, modifications, undo/redo, cancellation, extents, collapse and floating.',

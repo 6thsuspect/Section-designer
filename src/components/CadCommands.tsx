@@ -17,6 +17,8 @@ import {
   type CadSession,
   type CadValue,
 } from '@/engine/cad';
+import { executeCadExtended, isExtendedCadCommand, fitCadSpline } from '@/engine/cadExtended';
+import { cadNumber } from '@/engine/cad';
 import { computeComponentProps } from '@/engine/geometry';
 
 type View = { x: number; y: number; w: number; h: number };
@@ -51,6 +53,7 @@ export function useCad(options: CadOptions) {
     current.current = options;
   });
   const sessionRef = useRef(session);
+  const repeatCommand = useRef('');
   const log = (text: string, kind = 'prompt') =>
     setHistory((h) => [...h.slice(-499), { text, kind }]);
   const cancel = () => {
@@ -67,7 +70,9 @@ export function useCad(options: CadOptions) {
       p = s.project;
     const point = values[0] as Point;
     const drafts = p.drawingEntities ?? [];
-    if (
+    if (isExtendedCadCommand(name))
+      commit(executeCadExtended(p, s.selectedIds, name, values, close));
+    else if (
       [
         'LINE',
         'PLINE',
@@ -239,8 +244,13 @@ export function useCad(options: CadOptions) {
       }
       const active = sessionRef.current;
       if (!active) {
-        const c = findCadCommand(text);
+        const c = findCadCommand(text || repeatCommand.current);
+        if (!text && !repeatCommand.current) {
+          log('Enter a command or HELP.');
+          return;
+        }
         if (!c) throw new Error('Unknown command. HELP lists only implemented commands.');
+        repeatCommand.current = c.name;
         if (!c.prompts.length) execute(c.name, []);
         else {
           const next = { command: c, values: [] };
@@ -250,7 +260,25 @@ export function useCad(options: CadOptions) {
         }
         return;
       }
-      const path = ['LINE', 'PLINE'].includes(active.command.name);
+      if (active.command.name === 'CIRCLE') {
+        const variant =
+          active.values.length === 0 && ['2P', '3P'].includes(text.toUpperCase())
+            ? `CIRCLE${text.toUpperCase()}`
+            : active.values.length === 1 && ['D', 'DIAMETER'].includes(text.toUpperCase())
+              ? 'CIRCLED'
+              : null;
+        if (variant) {
+          const next = {
+            command: findCadCommand(variant)!,
+            values: variant === 'CIRCLED' ? active.values : [],
+          };
+          setSession(next);
+          sessionRef.current = next;
+          log(cadPrompt(next));
+          return;
+        }
+      }
+      const path = ['LINE', 'PLINE', 'SPLINE'].includes(active.command.name);
       if (path && ['UNDO', 'U'].includes(text.toUpperCase())) {
         const next = { ...active, values: active.values.slice(0, -1) };
         setSession(next);
@@ -267,7 +295,25 @@ export function useCad(options: CadOptions) {
       }
       if (!text && !['GRID', 'OSNAP', 'ORTHO', 'SNAP', 'POLAR'].includes(active.command.name))
         throw new Error('A value is required. Escape cancels.');
-      const value = parseCadValue(active, text, current.current.store.project.units);
+      let pointText = text;
+      const lastPoint = active.values.filter((v) => typeof v === 'object').at(-1) as
+        Point | undefined;
+      if (
+        active.command.types[Math.min(active.values.length, active.command.types.length - 1)] ===
+          'point' &&
+        lastPoint &&
+        hover &&
+        !/[,<@#]/.test(text)
+      ) {
+        const length = cadNumber(text, current.current.store.project.units);
+        const dx = hover.x - lastPoint.x,
+          dy = hover.y - lastPoint.y,
+          distance = Math.hypot(dx, dy);
+        if (distance < 1e-10)
+          throw new Error('Move the cursor to specify a direction before direct-distance input.');
+        pointText = `${lastPoint.x + (dx * length) / distance},${lastPoint.y + (dy * length) / distance}`;
+      }
+      const value = parseCadValue(active, pointText, current.current.store.project.units);
       if (
         active.command.name === 'SELECT' &&
         String(value).toUpperCase() === 'WINDOW' &&
@@ -411,6 +457,13 @@ export function useCad(options: CadOptions) {
       }
     } else preview = [...preview, hover];
   }
+  if (session?.command.name === 'SPLINE' && preview.length >= 2) {
+    try {
+      preview = fitCadSpline(preview);
+    } catch {
+      /* Keep the last valid fit preview. */
+    }
+  }
   let dimensionPreview = null;
   if (
     session &&
@@ -518,6 +571,10 @@ export function CadPanel({ cad, options }: { cad: CadApi; options: CadOptions })
           'ROTATE',
           'SCALE',
           'STRETCH',
+          'OFFSET',
+          'TRIM',
+          'FILLET',
+          'JOIN',
           'DIM',
           'DIMALIGNED',
           'ERASE',
@@ -730,6 +787,13 @@ export function CadPanel({ cad, options }: { cad: CadApi; options: CadOptions })
                   if (e.nativeEvent.isComposing) return;
                   if (
                     (e.key === ' ' || e.code === 'Space') &&
+                    !(
+                      activeSession &&
+                      ['TEXT', 'MTEXT'].includes(activeSession.command.name) &&
+                      activeSession.values.length === 3 &&
+                      text.startsWith('"') &&
+                      (text.length === 1 || !text.endsWith('"'))
+                    ) &&
                     !e.ctrlKey &&
                     !e.metaKey &&
                     !e.altKey

@@ -9,7 +9,8 @@
     "typecheck": "tsc --noEmit",
     "test:engineering": "node --experimental-strip-types --import ./scripts/ts-resolve.mjs scripts/verify-properties.mts",
     "test:midas": "node --experimental-strip-types --import ./scripts/ts-resolve.mjs scripts/verify-midas.mts",
-    "test:cad": "tsx scripts/verify-cad.mts && tsx scripts/verify-cad-ui.tsx"
+    "test:cad": "tsx scripts/verify-cad.mts && tsx scripts/verify-cad-extended.mts && tsx scripts/verify-cad-ui.tsx",
+    "inventory:cadcraft": "tsx scripts/inventory-cadcraft.mts"
   },
   "dependencies": {
     "@types/file-saver": "^2.0.7",

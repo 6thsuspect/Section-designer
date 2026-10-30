@@ -125,13 +125,18 @@ not the boolean union of the selection.
 - Old projects need no migration: `drawingEntities` is optional. JSON import validates
   new draft paths and rejects malformed points, unsupported kinds and duplicate IDs.
 
-## Deliberately deferred
+## Native CADCraft-style expansion
 
-SPLINE, HATCH, OFFSET, TRIM, EXTEND, FILLET, CHAMFER, ARRAY, JOIN, EXPLODE,
-LENGTHEN, BREAK, PEDIT, ALIGN and command-based PROPERTIES are **not advertised or
-registered**. They return the unknown-command message rather than pretend to work.
-Original section-editing tools remain available. This is a tested initial command
-set, not completion of every advanced operation in the enhancement roadmap.
+A first native integration batch now adds construction lines/rays, circle variants,
+fit-point splines, plain text, donuts, offsets, line trim/extend, line fillet/chamfer,
+join/explode, break/lengthen, rectangular/polar arrays and exact draft deduplication.
+Blank Enter/Space repeats commands, right-click acts as Enter, `#x,y` is accepted,
+and direct-distance input follows the current cursor direction.
+
+See [CADCRAFT_INTEGRATION.md](CADCRAFT_INTEGRATION.md) for exact supported options,
+limits, source credit and the remaining layers/blocks/hatch/annotation/layout/3D
+roadmap. This remains progressive native integration, not full CADCraft parity.
+Unported commands such as HATCH are absent from the runtime registry and suggestions.
 
 ## Files and verification
 
@@ -150,6 +155,8 @@ set, not completion of every advanced operation in the enhancement roadmap.
 - `scripts/verify-cad-ui.tsx`: full application mounted in jsdom; mode isolation,
   keyboard and mouse input, prompts, validation recovery, drawing, modification,
   undo/redo, cancellation, fit, collapse, resize and floating controls.
+
+The `test:cad` suite now also runs `scripts/verify-cad-extended.mts`.
 
 Run `npm run test:cad`, `npm run test:engineering`, `npm run test:midas`, and
 `npm run typecheck`. The production build requires the existing `DATABASE_URL`

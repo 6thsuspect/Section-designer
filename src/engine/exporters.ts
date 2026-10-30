@@ -57,8 +57,10 @@ function validateDraftingEntities(project: SectionProject): void {
   if (!Array.isArray(project.drawingEntities)) throw new Error('Invalid CAD drawing entities.');
   const ids = new Set(project.components.map(c => c.id));
   for (const entity of project.drawingEntities) {
-    if (!entity || typeof entity.id !== 'string' || ids.has(entity.id) || !['line', 'polyline', 'arc', 'point', 'dimension'].includes(entity.kind) || !Array.isArray(entity.points) || entity.points.length < (entity.kind === 'point' ? 1 : 2) || entity.points.some(p => !p || !Number.isFinite(p.x) || !Number.isFinite(p.y))) throw new Error('Invalid CAD path or duplicate object ID.');
+    if (!entity || typeof entity.id !== 'string' || ids.has(entity.id) || !['line', 'polyline', 'arc', 'point', 'dimension', 'text', 'xline', 'ray'].includes(entity.kind) || !Array.isArray(entity.points) || entity.points.length < (['point', 'text'].includes(entity.kind) ? 1 : 2) || entity.points.some(p => !p || !Number.isFinite(p.x) || !Number.isFinite(p.y))) throw new Error('Invalid CAD path or duplicate object ID.');
     if (entity.kind === 'dimension' && (entity.points.length !== 3 || !['linear', 'aligned'].includes(entity.dimensionStyle ?? '') || (entity.dimensionStyle === 'linear' && (!entity.dimensionAxis || !Number.isFinite(entity.dimensionAxis.x) || !Number.isFinite(entity.dimensionAxis.y) || Math.abs(Math.hypot(entity.dimensionAxis.x, entity.dimensionAxis.y) - 1) > 1e-6)) || Math.hypot(entity.points[1].x - entity.points[0].x, entity.points[1].y - entity.points[0].y) < 1e-10)) throw new Error('Invalid CAD dimension.');
+    if (['xline', 'ray'].includes(entity.kind) && (entity.points.length !== 2 || Math.hypot(entity.points[1].x - entity.points[0].x, entity.points[1].y - entity.points[0].y) < 1e-10)) throw new Error('Invalid construction line.');
+    if (entity.kind === 'text' && (entity.points.length !== 1 || typeof entity.text !== 'string' || !entity.text.trim() || entity.text.length > 10000 || /[\x00-\x08\x0B-\x1F]/.test(entity.text) || !Number.isFinite(entity.textHeight) || entity.textHeight! <= 0 || !Number.isFinite(entity.textRotation ?? 0))) throw new Error('Invalid CAD text.');
     ids.add(entity.id);
   }
 }
@@ -319,7 +321,16 @@ export function exportDXF(project: SectionProject, props: SectionProperties): st
   });
 
   for (const entity of drafting) {
-    if (entity.kind === 'dimension') {
+    if (entity.kind === 'xline' || entity.kind === 'ray') {
+      const [a, b] = entity.points, length = Math.hypot(b.x - a.x, b.y - a.y);
+      dxf += dxfPair(0, entity.kind === 'xline' ? 'XLINE' : 'RAY') + dxfPair(8, 'CONSTRUCTION') + dxfPair(10, a.x) + dxfPair(20, a.y) + dxfPair(30, 0) + dxfPair(11, (b.x - a.x) / length) + dxfPair(21, (b.y - a.y) / length) + dxfPair(31, 0);
+    } else if (entity.kind === 'text') {
+      const origin = entity.points[0], radians = (entity.textRotation ?? 0) * Math.PI / 180, height = entity.textHeight ?? 10;
+      (entity.text ?? '').split('\n').forEach((line, index) => {
+        const offset = index * height * 1.2;
+        dxf += generateDXFText(line, origin.x + offset * Math.sin(radians), origin.y - offset * Math.cos(radians), height, 'DRAFT_TEXT') + dxfPair(50, entity.textRotation ?? 0);
+      });
+    } else if (entity.kind === 'dimension') {
       const dimension = dimensionGeometry(entity, textHeight * 0.3);
       for (const [a, b] of dimension.segments) dxf += generateDXFLine(a.x, a.y, b.x, b.y, 'DIMENSIONS');
       dxf += generateDXFText(dimension.label, dimension.text.x, dimension.text.y, textHeight, 'DIMENSIONS');

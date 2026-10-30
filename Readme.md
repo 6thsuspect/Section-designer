@@ -1010,3 +1010,11 @@ The top-toolbar **AutoCAD Mode** toggle enables command-driven drawing, a
 resizable command window, drafting paths, precision controls, and shared undo/redo.
 It is off by default. See [CAD_MODE.md](CAD_MODE.md) for the supported commands,
 coordinate syntax, engineering safeguards, deferred operations, and tests.
+
+### CADCraft-inspired native command expansion
+
+A first native integration batch adds 21 drawing/modify commands while preserving
+the existing section canvas and shared undo/redo. See
+[CADCRAFT_INTEGRATION.md](CADCRAFT_INTEGRATION.md) for supported behavior, upstream
+command inventory, license credit, and the remaining integration roadmap. This
+is progressive integration, not a claim of complete CADCraft feature parity.

@@ -1,7 +1,7 @@
 'use client';
 import React, { useRef, useState, useCallback, useEffect, useMemo } from 'react';
 import { visibleViewportBounds } from '@/engine/viewport';
-import { draftInRect, dimensionGeometry } from '@/engine/cad';
+import { draftInRect, dimensionGeometry, drawingEntityPoints, clipCadConstruction } from '@/engine/cad';
 import CadDimension from './CadDimension';
 import type { CadApi } from './CadCommands';
 import type { StoreState } from '@/store/useStore';
@@ -472,7 +472,7 @@ export default function Canvas({ store, showGrid, osnap, osnapLabels = true, vie
     if (!cadActive) return { rings: [] as Point[][], centers: [] as Point[] };
     const props = store.project.components.filter(c => c.visible).map(c => computeComponentProps(c));
     const rings = props.map(p => p.outline.length ? [...p.outline, p.outline[0]] : []);
-    return { rings: [...rings, ...(store.project.drawingEntities ?? []).flatMap(e => e.kind === 'dimension' ? dimensionGeometry(e).segments : [e.points])], centers: props.map(p => ({ x: p.cx, y: p.cy })) };
+    return { rings: [...rings, ...(store.project.drawingEntities ?? []).flatMap(e => e.kind === 'dimension' ? dimensionGeometry(e).segments : [drawingEntityPoints(e)])], centers: props.map(p => ({ x: p.cx, y: p.cy })) };
   }, [cadActive, store.project.components, store.project.drawingEntities]);
   const cadMousePoint = (clientX: number, clientY: number): Point => {
     const world = svgToWorld(clientX, clientY);
@@ -505,6 +505,7 @@ export default function Canvas({ store, showGrid, osnap, osnapLabels = true, vie
           e.stopPropagation(); e.preventDefault(); cad.pick(cadMousePoint(e.clientX, e.clientY));
         }}
         onPointerMoveCapture={e => { if (cad?.pointInput) cad.setHover(cad.constrain(cadMousePoint(e.clientX, e.clientY))); }}
+        onContextMenu={e => { if (cad) { e.preventDefault(); if (cad.inputRef.current?.form) cad.inputRef.current.form.requestSubmit(); else cad.submit(''); } }}
         onPointerDown={handlePointerDown}
         onPointerMove={handlePointerMove}
         onPointerUp={finishPointer}
@@ -539,7 +540,9 @@ export default function Canvas({ store, showGrid, osnap, osnapLabels = true, vie
           {/* Draft paths share project history but never contribute structural area. */}
           {(store.project.drawingEntities ?? []).map(entity => {
             const delta = draftDelta.id === entity.id ? draftDelta : { x: 0, y: 0 };
-            const points = entity.points.map(p => ({ x: p.x + delta.x, y: p.y + delta.y }));
+            const anchors = entity.points.map(p => ({ x: p.x + delta.x, y: p.y + delta.y }));
+            const points = ['xline', 'ray'].includes(entity.kind) ? clipCadConstruction({ ...entity, points: anchors }, { x0: visibleBounds.x, y0: -visibleBounds.y - visibleBounds.h, x1: visibleBounds.x + visibleBounds.w, y1: -visibleBounds.y }) ?? [] : anchors;
+            if (!points.length) return null;
             const color = store.selectedIds.includes(entity.id) ? '#38bdf8' : palette.axisX;
             return <g key={entity.id} onPointerDown={e => {
               if (e.button !== 0 || e.shiftKey) return;
@@ -551,7 +554,9 @@ export default function Canvas({ store, showGrid, osnap, osnapLabels = true, vie
               draftDrag.current = { id: entity.id, start: svgToWorld(e.clientX, e.clientY), delta: { x: 0, y: 0 } };
               svgRef.current?.setPointerCapture(e.pointerId);
             }} style={{ cursor: 'move' }}>
-              {entity.kind === 'dimension' ? <CadDimension entity={{ ...entity, points }} px={pxNow} color={color} /> : entity.kind === 'point' ? <circle cx={points[0].x} cy={points[0].y} r={viewBox.w * 0.004} fill={color} /> : <>
+              {entity.kind === 'text' ? <g transform={`translate(${points[0].x},${points[0].y}) rotate(${entity.textRotation ?? 0})`}>
+                <text transform="scale(1,-1)" fontSize={entity.textHeight ?? 10} fontFamily="monospace" fill={color}>{(entity.text ?? '').split('\n').map((line, i) => <tspan key={i} x={0} dy={i ? (entity.textHeight ?? 10) * 1.2 : 0}>{line || ' '}</tspan>)}</text>
+              </g> : entity.kind === 'dimension' ? <CadDimension entity={{ ...entity, points }} px={pxNow} color={color} /> : entity.kind === 'point' ? <circle cx={points[0].x} cy={points[0].y} r={viewBox.w * 0.004} fill={color} /> : <>
                 <polyline points={points.map(p => `${p.x},${p.y}`).join(' ')} fill="none" stroke="transparent" strokeWidth={viewBox.w * 0.012} />
                 <polyline points={points.map(p => `${p.x},${p.y}`).join(' ')} fill="none" stroke={color} strokeWidth={viewBox.w * 0.0015} pointerEvents="none" />
               </>}

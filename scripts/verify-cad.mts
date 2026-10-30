@@ -42,7 +42,7 @@ for (const command of CAD_COMMANDS) {
   assert.equal(findCadCommand(command.name.toLowerCase()), command);
   for (const alias of command.aliases) assert.equal(findCadCommand(alias.toLowerCase()), command);
 }
-assert.equal(findCadCommand('TRIM'), undefined);
+assert.equal(findCadCommand('HATCH'), undefined);
 assert.equal(findCadCommand('not-a-command'), undefined);
 near(cadNumber('1m', 'mm'), 1000);
 near(cadNumber('2in', 'cm'), 5.08);
