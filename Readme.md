@@ -1004,6 +1004,30 @@ records, with coordinate continuation lines matching the MIDAS command format.
 
 Run `npm run test:midas` for boundary-export regression checks.
 
+### MIDAS Section.mct import
+
+Choose **Import** (or **Ctrl+I**) and select/drop a `.mct` file. The dialog lists
+sections by number/name; select one and confirm its coordinate unit, then click
+**Import & Calculate**. Import replaces the current project through the existing
+project/history workflow and fits the imported section to the canvas.
+
+- Supports non-tapered `VALUE / GEN` polygon sections in `*SECT-PSCVALUE`, including
+  continued `OPOLY` coordinates and multiple `IPOLY` openings. Section number,
+  section name and `*UNIT` length units are retained; absent units default to mm
+  with an explicit warning and a unit selector.
+- MIDAS local Y/Z coordinates map to app X/Y. Boundary geometry is authoritative:
+  properties are recalculated, not copied from MIDAS stiffness rows. Default
+  steel is assigned and must be reviewed. Member offsets, loads and MIDAS
+  material assignments are not imported.
+- Multiple sections are **not** overlaid: import one selected section at a time.
+  Invalid/crossing boundaries, touching/overlapping openings, duplicate section
+  numbers and unsupported units are rejected. PSC, composite, tapered, database
+  and General-LINE (`VERTEX`/`LINE`/`LOOP`) definitions are not supported and do not
+  produce approximate geometry. Unrelated model commands are ignored.
+- `npm run test:midas` covers export, import round trips, holes/properties,
+  multi-section selection, units, invalid input and import-dialog interactions
+  (jsdom).
+
 ### Optional AutoCAD Mode
 
 The top-toolbar **AutoCAD Mode** toggle enables command-driven drawing, a
