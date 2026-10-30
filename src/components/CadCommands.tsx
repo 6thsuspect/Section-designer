@@ -685,7 +685,8 @@ export function useCad(options: CadOptions) {
     stretchArea,
     stretchVertices,
     stretchError,
-    stretchOutline: stretchArea ? stretchAreaPoints(stretchArea) : [],
+    // Retain the vertex mask for STRETCH, but draw its boundary only while selecting.
+    stretchOutline: selectionInput && stretchArea ? stretchAreaPoints(stretchArea) : [],
     escape,
     session,
     history,

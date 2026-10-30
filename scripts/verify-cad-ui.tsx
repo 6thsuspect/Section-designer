@@ -869,6 +869,100 @@ async function main() {
     'drawing constraints resume immediately after selection',
   );
   await escapeCad();
+  // The STRETCH mask survives confirmation; its temporary rectangle must not.
+  await submit('OSNAP');
+  await submit('OFF');
+  await submit('SNAP');
+  await submit('OFF');
+  for (const orthoEnabled of [false, true]) {
+    await submit('ORTHO');
+    await submit(orthoEnabled ? 'ON' : 'OFF');
+    for (const crossing of [false, true]) {
+      await submit('STRETCH');
+      const firstX = crossing ? 510 : 390;
+      const secondX = crossing ? 390 : 510;
+      await pointer('pointerdown', firstX, 410);
+      await pointer('pointerup', firstX, 410);
+      await pointer('pointermove', secondX, 290);
+      assert.ok(
+        svg.querySelector('[data-testid="cad-stretch-area"]'),
+        'selection boundary is visible during acquisition',
+      );
+      await pointer('pointerdown', secondX, 290);
+      await pointer('pointerup', secondX, 290);
+      assert.equal(
+        svg.querySelector('[data-testid="cad-stretch-area"]'),
+        null,
+        'confirmed rectangle disappears',
+      );
+      assert.ok(
+        svg.querySelector('circle[fill="#22c55e"]'),
+        'selected vertex highlighting is retained',
+      );
+      await pointer('pointermove', 420, 380);
+      assert.equal(
+        svg.querySelector('[data-testid="cad-stretch-area"]'),
+        null,
+        'base-point acquisition must not revive the rectangle',
+      );
+      await submit('0,0');
+      await pointer('pointermove', 450, 400);
+      assert.equal(
+        svg.querySelector('[data-testid="cad-stretch-area"]'),
+        null,
+        'displacement preview must not revive the rectangle',
+      );
+      assert.ok(
+        svg.querySelector('circle[fill="#22c55e"]'),
+        'vertex mask survives displacement preview',
+      );
+      if (crossing) await escapeCad();
+      else {
+        await submit('@5,0');
+        await submit('UNDO');
+      }
+      assert.equal(
+        svg.querySelector('[data-testid="cad-stretch-area"]'),
+        null,
+        'completion/cancel clears temporary rectangle',
+      );
+      assert.equal(
+        svg.querySelector('circle[fill="#22c55e"]'),
+        null,
+        'completion/cancel clears temporary vertex graphics',
+      );
+      await submit('LINE');
+      await submit('0,0');
+      await pointer('pointermove', 470, 370);
+      assert.equal(
+        svg.querySelector('[data-testid="cad-stretch-area"]'),
+        null,
+        'subsequent drawing has no stale selection rectangle',
+      );
+      await escapeCad();
+    }
+  }
+  await submit('STRETCH');
+  await submit('-10,-10');
+  await pointer('pointermove', 510, 290);
+  assert.ok(svg.querySelector('[data-testid="cad-stretch-area"]'));
+  await escapeCad();
+  assert.equal(
+    svg.querySelector('[data-testid="cad-stretch-area"]'),
+    null,
+    'ESC during selection clears the live rectangle',
+  );
+  await submit('STRETCH');
+  await submit('CP');
+  for (const point of ['-10,-10', '110,-10', '110,110', '-10,110']) await submit(point);
+  await submit('');
+  assert.equal(
+    svg.querySelector('[data-testid="cad-stretch-area"]'),
+    null,
+    'confirmed polygon boundary is temporary too',
+  );
+  assert.ok(svg.querySelector('circle[fill="#22c55e"]'), 'polygon selection mask is retained');
+  await escapeCad();
   await act(async () => root.unmount());
   console.log(
     'CAD UI checks passed: full app mode isolation, prompts, native drawing, draft paths, invalid input recovery, modifications, undo/redo, cancellation, extents, collapse and floating.',
