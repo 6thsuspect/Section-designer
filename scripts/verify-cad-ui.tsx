@@ -75,11 +75,13 @@ async function main() {
   );
   for (const command of CAD_COMMANDS) {
     assert.ok(tool(command.name).querySelector('svg path')?.getAttribute('d'));
+    assert.equal(tool(command.name).querySelector('svg')?.getAttribute('width'), '16');
+    assert.equal(tool(command.name).querySelector('svg')?.getAttribute('height'), '16');
     assert.ok(tool(command.name).title.includes(command.help));
   }
   assert.ok(
-    toolbox().previousElementSibling?.contains(toggle()),
-    'toolbox is directly below the main toolbar',
+    toolbox().previousElementSibling?.classList.contains('overflow-y-auto'),
+    'toolbox follows the component list in the side panel',
   );
   await click(
     document.querySelector<HTMLButtonElement>('[aria-label="Collapse command window"]')!,

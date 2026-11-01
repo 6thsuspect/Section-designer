@@ -536,8 +536,6 @@ export default function Home() {
         onToggleTheme={toggleTheme}
       />
 
-      {cadEnabled && <CadToolbox onCommand={cad.run} activeCommand={cad.session?.command.name} />}
-
       {/* Main content */}
       <div className="flex-1 flex overflow-hidden">
         {renderDockSide('left')}
@@ -653,7 +651,7 @@ export default function Home() {
 
       {/* Panel contents: mounted once, re-parented into whichever frame hosts them */}
       <PanelPortal node={panelNodes.components}>
-        <ComponentsPanel store={store} onOpenCustomShape={() => setShowCustomShape(true)} onEditCoordinates={openEditCoordinates} />
+        <ComponentsPanel cadToolbox={cadEnabled ? <CadToolbox onCommand={cad.run} activeCommand={cad.session?.command.name} /> : undefined} store={store} onOpenCustomShape={() => setShowCustomShape(true)} onEditCoordinates={openEditCoordinates} />
       </PanelPortal>
       <PanelPortal node={panelNodes.properties}>
         <PropertiesPanel store={store} onEditCoordinates={openEditCoordinates} />
