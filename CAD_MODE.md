@@ -6,12 +6,12 @@ AutoCAD-inspired interface, not an Autodesk product or an AutoCAD file interpret
 ## Isolation and layout
 
 - ON reveals a shortcut strip and command window immediately below the canvas.
-  A **CAD Toolbox** appears at the bottom of the Components panel (left side by
-  default), below the component list. It contains every implemented registry
+  A horizontal **CAD Toolbox** appears directly below the main toolbar, above
+  the canvas and side panels. It contains every implemented registry
   command, grouped by task, with conventional CAD-style SVG icons, labels and
   help/alias tooltips. Search by name, alias or help text; use the header to
-  collapse it. Its own scroll area keeps commands accessible without covering
-  the canvas. It follows the Components panel when docked/floated.
+  collapse it. Its horizontal scroll area and two-row command groups keep commands accessible
+  without covering the canvas. It stays at the top independently of side-panel docking.
   Clicking a tool safely cancels incomplete input, starts the existing command,
   reveals/focuses the command input and highlights the active command. Completed
   geometry and selection are retained. The toolbox is entirely absent when OFF.

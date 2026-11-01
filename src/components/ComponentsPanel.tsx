@@ -19,13 +19,12 @@ const COMPONENT_TYPES: { type: ComponentType; label: string; icon: string }[] = 
 
 interface Props {
   store: StoreState;
-  cadToolbox?: React.ReactNode;
   onOpenCustomShape: () => void;
   /** Open the coordinate editor for a custom-shape/polygon component */
   onEditCoordinates?: (comp: SectionComponent) => void;
 }
 
-export default function ComponentsPanel({ store, onOpenCustomShape, onEditCoordinates, cadToolbox }: Props) {
+export default function ComponentsPanel({ store, onOpenCustomShape, onEditCoordinates }: Props) {
   const [showAdd, setShowAdd] = useState(true);
   const [combineError, setCombineError] = useState<string | null>(null);
   const selectedCombined = store.project.components.find(c =>
@@ -159,7 +158,6 @@ export default function ComponentsPanel({ store, onOpenCustomShape, onEditCoordi
           ))
         )}
       </div>
-      {cadToolbox}
     </div>
   );
 }

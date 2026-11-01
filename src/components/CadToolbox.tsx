@@ -104,11 +104,10 @@ export default function CadToolbox({
     <section
       data-cad-ui
       aria-label="CAD command toolbox"
-      className="flex flex-col shrink-0 min-h-0 border-t"
+      className="flex flex-col shrink-0 min-h-0 min-w-0 border-b"
       style={{
         borderColor: 'var(--border)',
         background: 'var(--bg-secondary)',
-        ...(open ? { height: 'min(320px, 45%)' } : {}),
       }}
     >
       <button
@@ -127,8 +126,8 @@ export default function CadToolbox({
         <span aria-hidden="true">{open ? '−' : '+'}</span>
       </button>
       {open && (
-        <div id="cad-toolbox-commands" className="flex flex-col min-h-0 flex-1">
-          <div className="p-2 shrink-0">
+        <div id="cad-toolbox-commands" className="flex min-h-0 min-w-0">
+          <div className="p-2 shrink-0 w-36 sm:w-48">
             <input
               type="search"
               className="input w-full text-xs"
@@ -138,7 +137,7 @@ export default function CadToolbox({
               onChange={(e) => setSearch(e.target.value)}
             />
           </div>
-          <div className="overflow-y-auto min-h-0 flex-1 px-2 pb-2">
+          <div className="flex gap-4 overflow-x-auto min-w-0 flex-1 px-2 pb-2">
             {groups.map((group) => {
               const names = group.commands.split(' ');
               const commands = matches.filter(
@@ -149,14 +148,14 @@ export default function CadToolbox({
               );
               if (!commands.length) return null;
               return (
-                <div key={group.name} role="group" aria-label={group.name} className="mb-2">
+                <div key={group.name} role="group" aria-label={group.name} className="shrink-0">
                   <div
                     className="text-[10px] uppercase tracking-wide font-semibold py-1"
                     style={{ color: 'var(--text-muted)' }}
                   >
                     {group.name}
                   </div>
-                  <div className="grid grid-cols-3 gap-1">
+                  <div className="grid grid-rows-2 grid-flow-col auto-cols-[72px] gap-1">
                     {commands.map((command) => (
                       <button
                         key={command.name}

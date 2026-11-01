@@ -78,8 +78,8 @@ async function main() {
     assert.ok(tool(command.name).title.includes(command.help));
   }
   assert.ok(
-    toolbox().previousElementSibling?.classList.contains('overflow-y-auto'),
-    'toolbox follows component list',
+    toolbox().previousElementSibling?.contains(toggle()),
+    'toolbox is directly below the main toolbar',
   );
   await click(
     document.querySelector<HTMLButtonElement>('[aria-label="Collapse command window"]')!,
