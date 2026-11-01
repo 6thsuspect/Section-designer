@@ -4,6 +4,7 @@ import React, { useState, useCallback, useEffect, useRef, useMemo } from 'react'
 import { useStore } from '@/store/useStore';
 import Toolbar from '@/components/Toolbar';
 import ComponentsPanel from '@/components/ComponentsPanel';
+import CadToolbox from '@/components/CadToolbox';
 import PropertiesPanel from '@/components/PropertiesPanel';
 import Canvas from '@/components/Canvas';
 import { useCad, CadPanel } from '@/components/CadCommands';
@@ -650,7 +651,7 @@ export default function Home() {
 
       {/* Panel contents: mounted once, re-parented into whichever frame hosts them */}
       <PanelPortal node={panelNodes.components}>
-        <ComponentsPanel store={store} onOpenCustomShape={() => setShowCustomShape(true)} onEditCoordinates={openEditCoordinates} />
+        <ComponentsPanel cadToolbox={cadEnabled ? <CadToolbox onCommand={cad.run} activeCommand={cad.session?.command.name} /> : undefined} store={store} onOpenCustomShape={() => setShowCustomShape(true)} onEditCoordinates={openEditCoordinates} />
       </PanelPortal>
       <PanelPortal node={panelNodes.properties}>
         <PropertiesPanel store={store} onEditCoordinates={openEditCoordinates} />

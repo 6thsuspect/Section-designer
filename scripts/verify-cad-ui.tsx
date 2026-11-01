@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { JSDOM } from 'jsdom';
 import React, { act } from 'react';
+import { CAD_COMMANDS } from '../src/engine/cad';
 async function main() {
   const dom = new JSDOM('<!doctype html><html><body><div id="root"></div></body></html>', {
     url: 'http://localhost',
@@ -40,6 +41,7 @@ async function main() {
   assert.ok(toggle());
   assert.equal(toggle().getAttribute('aria-pressed'), 'false');
   assert.equal(document.querySelector('[aria-label="CAD command window"]'), null);
+  assert.equal(document.querySelector('[aria-label="CAD command toolbox"]'), null);
   const originalSvg = document.querySelector('svg.w-full.h-full')!;
   const originalView = originalSvg.getAttribute('viewBox');
   await click(toggle());
@@ -62,7 +64,68 @@ async function main() {
         .dispatchEvent(new dom.window.Event('submit', { bubbles: true, cancelable: true }));
     });
   };
-  await submit('REC');
+  const toolbox = () => document.querySelector('[aria-label="CAD command toolbox"]')!;
+  const tool = (name: string) =>
+    toolbox().querySelector<HTMLButtonElement>(`[data-cad-command="${name}"]`)!;
+  assert.deepEqual(
+    [...toolbox().querySelectorAll<HTMLButtonElement>('[data-cad-command]')]
+      .map((b) => b.dataset.cadCommand)
+      .sort(),
+    CAD_COMMANDS.map((c) => c.name).sort(),
+  );
+  for (const command of CAD_COMMANDS) {
+    assert.ok(tool(command.name).querySelector('svg path')?.getAttribute('d'));
+    assert.ok(tool(command.name).title.includes(command.help));
+  }
+  assert.ok(
+    toolbox().previousElementSibling?.classList.contains('overflow-y-auto'),
+    'toolbox follows component list',
+  );
+  await click(
+    document.querySelector<HTMLButtonElement>('[aria-label="Collapse command window"]')!,
+  );
+  assert.equal(document.getElementById('cad-command-input'), null);
+  await click(tool('LINE'));
+  await act(async () => {
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  });
+  assert.ok(input(), 'toolbox reveals collapsed command input');
+  assert.equal(document.activeElement, input());
+  assert.equal(tool('LINE').getAttribute('aria-pressed'), 'true');
+  await submit('0,0');
+  await click(tool('RECTANGLE'));
+  assert.equal(tool('RECTANGLE').getAttribute('aria-pressed'), 'true');
+  assert.ok(
+    document
+      .querySelector('[role="log"]')
+      ?.textContent?.includes('incomplete geometry discarded'),
+  );
+  await click(tool('CANCEL'));
+  assert.equal(tool('RECTANGLE').getAttribute('aria-pressed'), 'false');
+  const toolboxHeader = () => toolbox().querySelector<HTMLButtonElement>('[aria-expanded]')!;
+  await click(toolboxHeader());
+  assert.equal(toolboxHeader().getAttribute('aria-expanded'), 'false');
+  assert.equal(toolbox().querySelector('[data-cad-command]'), null);
+  await click(toolboxHeader());
+  const searchToolbox = async (value: string) => {
+    await act(async () => {
+      const field = toolbox().querySelector<HTMLInputElement>('input')!;
+      Object.getOwnPropertyDescriptor(
+        dom.window.HTMLInputElement.prototype,
+        'value',
+      )!.set!.call(field, value);
+      field.dispatchEvent(new dom.window.Event('input', { bubbles: true }));
+    });
+  };
+  await searchToolbox('CIRCLE3P');
+  assert.equal(toolbox().querySelectorAll('[data-cad-command]').length, 1);
+  assert.ok(tool('CIRCLE3P'));
+  await searchToolbox('REC');
+  assert.ok(tool('RECTANGLE'), 'search accepts aliases');
+  await searchToolbox('zz-no-such-command');
+  assert.ok(toolbox().textContent?.includes('No matching commands'));
+  await searchToolbox('');
+  await click(tool('RECTANGLE'));
   assert.ok(document.body.textContent?.includes('Specify first corner:'));
   await submit('0,0');
   assert.ok(document.body.textContent?.includes('Specify opposite corner:'));
@@ -72,12 +135,12 @@ async function main() {
   await submit('ALL');
   await submit('LIST');
   assert.ok(document.body.textContent?.includes('area=5000.000000'));
-  await submit('UNDO');
+  await click(tool('UNDO'));
   await submit('SELECT');
   await submit('ALL');
   await submit('LIST');
   assert.ok(document.body.textContent?.includes('Select objects first.'));
-  await submit('REDO');
+  await click(tool('REDO'));
   await submit('SELECT');
   await submit('ALL');
   await submit('MOVE');
@@ -125,12 +188,14 @@ async function main() {
   await submit('RECTANGLE');
   await submit('2000,2000');
   await click(toggle());
+  assert.equal(document.querySelector('[aria-label="CAD command toolbox"]'), null);
   assert.equal(document.querySelector('[aria-label="CAD command window"]'), null);
   assert.equal(
     document.querySelector('svg.w-full.h-full')!.getAttribute('viewBox'),
     originalView,
   );
   assert.equal(document.querySelector('[data-cad-ui]'), null);
+  assert.equal(document.querySelector('[aria-label="CAD command toolbox"]'), null);
   // CAD-only function keys must not change view/layout while mode is off.
   await act(async () => {
     window.dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: 'F8', bubbles: true }));
@@ -184,7 +249,7 @@ async function main() {
   );
   assert.equal(
     buttons()
-      .find((b) => b.textContent === 'ORTHO')!
+      .find((b) => b.textContent === 'ORTHO' && !b.hasAttribute('data-cad-command'))!
       .getAttribute('aria-pressed'),
     'true',
   );
@@ -720,7 +785,8 @@ async function main() {
       }),
     ),
   );
-  const orthoButton = () => buttons().find((b) => b.textContent === 'ORTHO')!;
+  const orthoButton = () =>
+    buttons().find((b) => b.textContent === 'ORTHO' && !b.hasAttribute('data-cad-command'))!;
   assert.equal(orthoButton().getAttribute('aria-pressed'), 'true');
   const pointer = async (type: string, x: number, y: number) => {
     await act(async () =>

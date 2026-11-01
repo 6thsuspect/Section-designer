@@ -58,6 +58,7 @@ export function useCad(options: CadOptions) {
     [spacing, setSpacing] = useState(10);
   const [hover, setHover] = useState<Point | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const prepareCommandInputRef = useRef<(() => void) | null>(null);
   const current = useRef(options);
   useLayoutEffect(() => {
     current.current = options;
@@ -470,9 +471,15 @@ export function useCad(options: CadOptions) {
     } else cancel();
   };
   const run = (text: string) => {
+    if (!current.current.enabled) return;
+    prepareCommandInputRef.current?.();
     if (sessionRef.current) cancel();
     submit(text);
-    inputRef.current?.focus();
+    // Dialog commands own keyboard focus; do not focus the input behind a modal.
+    if (!['SAVE', 'OPEN'].includes(text.toUpperCase())) {
+      inputRef.current?.focus();
+      requestAnimationFrame(() => inputRef.current?.focus());
+    }
   };
   const api = useRef({ submit, cancel, execute, escape });
   useLayoutEffect(() => {
@@ -697,6 +704,7 @@ export function useCad(options: CadOptions) {
     run,
     cancel,
     inputRef,
+    prepareCommandInputRef,
     ortho,
     polar,
     snap,
@@ -726,11 +734,18 @@ export function useCad(options: CadOptions) {
 }
 export type CadApi = ReturnType<typeof useCad>;
 export function CadPanel({ cad, options }: { cad: CadApi; options: CadOptions }) {
-  const { inputRef, session: activeSession } = cad;
+  const { inputRef, prepareCommandInputRef, session: activeSession } = cad;
   const [text, setText] = useState(''),
     [collapsed, setCollapsed] = useState(false),
     [height, setHeight] = useState(170),
     [floating, setFloating] = useState(false);
+  useLayoutEffect(() => {
+    prepareCommandInputRef.current = () => {
+      setText('');
+      setCollapsed(false);
+    };
+    return () => { prepareCommandInputRef.current = null; };
+  }, [prepareCommandInputRef]);
   const [entered, setEntered] = useState<string[]>([]),
     [index, setIndex] = useState(-1),
     [suggestion, setSuggestion] = useState(0);
