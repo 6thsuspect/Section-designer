@@ -7,7 +7,10 @@
     "start": "next start",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
-    "test:engineering": "node --experimental-strip-types --import ./scripts/ts-resolve.mjs scripts/verify-properties.mts"
+    "test:engineering": "node --experimental-strip-types --import ./scripts/ts-resolve.mjs scripts/verify-properties.mts",
+    "test:midas": "node --experimental-strip-types --import ./scripts/ts-resolve.mjs scripts/verify-midas.mts && tsx scripts/verify-midas-import.mts && tsx scripts/verify-midas-import-ui.tsx",
+    "test:cad": "tsx scripts/verify-cad.mts && tsx scripts/verify-cad-extended.mts && tsx scripts/verify-cad-grouped-stretch.mts && tsx scripts/verify-cad-regions.mts && tsx scripts/verify-cad-ui.tsx && tsx scripts/verify-cad-grouped-ui.tsx",
+    "inventory:cadcraft": "tsx scripts/inventory-cadcraft.mts"
   },
   "dependencies": {
     "@types/file-saver": "^2.0.7",
@@ -27,6 +30,7 @@
   },
   "devDependencies": {
     "@tailwindcss/postcss": "4.1.17",
+    "@types/jsdom": "^30.0.0",
     "@types/node": "22.19.15",
     "@types/pg": "8.18.0",
     "@types/react": "19.2.14",
@@ -34,8 +38,10 @@
     "drizzle-kit": "0.31.10",
     "eslint": "9.39.4",
     "eslint-config-next": "16.2.6",
+    "jsdom": "^30.1.3",
     "postcss": "8.5.8",
     "tailwindcss": "4.1.17",
+    "tsx": "^4.23.15",
     "typescript": "5.9.3"
   }
 }

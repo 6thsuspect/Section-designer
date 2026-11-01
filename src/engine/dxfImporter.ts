@@ -1,3 +1,6 @@
+import { validateCadRegion, polygonRegionArea } from './cadRegion';
+import { uniqueCadVertices } from './cadPath';
+import { segmentsIntersect } from './geometry';
 import { v4 as uuid } from 'uuid';
 import type { LengthUnit, Point, SectionComponent, SectionProject } from './types';
 
@@ -244,6 +247,86 @@ function makeComponent(contour: Contour, operation: 'add' | 'subtract', index: n
   return { ...common, type: 'custom-shape', geometry: { points }, position: { x: 0, y: 0 }, rotation: 0 };
 }
 
+/** Older native exports encoded voids using paired, zero-width bridge edges. */
+function validLegacyKeyhole(points: Point[]): boolean {
+  const key = (p: Point) => `${p.x},${p.y}`;
+  const edges = points.map((a, i) => ({
+    a,
+    b: points[(i + 1) % points.length],
+    removed: false,
+    used: false,
+  }));
+  const pending = new Map<string, typeof edges>();
+  let bridges = 0;
+  for (const edge of edges) {
+    const reverse = pending.get(`${key(edge.b)}>${key(edge.a)}`)?.pop();
+    if (reverse) {
+      reverse.removed = edge.removed = true;
+      bridges++;
+    } else {
+      const id = `${key(edge.a)}>${key(edge.b)}`;
+      pending.set(id, [...(pending.get(id) ?? []), edge]);
+    }
+  }
+  if (!bridges) return false;
+  const remaining = edges.filter((e) => !e.removed);
+  const loops: Point[][] = [];
+  for (const first of remaining) {
+    if (first.used) continue;
+    const ring: Point[] = [];
+    let edge = first;
+    while (!edge.used) {
+      edge.used = true;
+      ring.push(edge.a);
+      if (key(edge.b) === key(first.a)) break;
+      const next = remaining.filter((e) => !e.used && key(e.a) === key(edge.b));
+      if (next.length !== 1) return false;
+      edge = next[0];
+    }
+    if (key(edge.b) !== key(first.a)) return false;
+    try {
+      validateCadRegion(ring);
+    } catch {
+      return false;
+    }
+    loops.push(ring);
+  }
+  for (let i = 0; i < loops.length; i++)
+    for (let j = i + 1; j < loops.length; j++) {
+      if (
+        loops[i].some((p, k) =>
+          loops[j].some((q, n) =>
+            segmentsIntersect(
+              p,
+              loops[i][(k + 1) % loops[i].length],
+              q,
+              loops[j][(n + 1) % loops[j].length],
+            ),
+          ),
+        )
+      )
+        return false;
+    }
+  const signed = (ring: Point[]) =>
+    ring.reduce((sum, p, i) => {
+      const q = ring[(i + 1) % ring.length],
+        o = ring[0];
+      return sum + (p.x - o.x) * (q.y - o.y) - (q.x - o.x) * (p.y - o.y);
+    }, 0);
+  const largest = [...loops].sort((a, b) => polygonRegionArea(b) - polygonRegionArea(a))[0];
+  if (!largest) return false;
+  const winding = Math.sign(signed(largest));
+  return loops.every((ring) => {
+    const depth = loops.filter(
+      (other) =>
+        other !== ring &&
+        polygonRegionArea(other) > polygonRegionArea(ring) &&
+        pointInPolygon(ring[0], other),
+    ).length;
+    return Math.sign(signed(ring)) === (depth % 2 === 0 ? winding : -winding);
+  });
+}
+
 /**
  * Parse an ASCII DXF into Section Designer components. Closed LWPOLYLINE,
  * POLYLINE, CIRCLE, full ELLIPSE, and closed chains of LINE/ARC entities are
@@ -359,6 +442,9 @@ export function importDXF(text: string, fileName = 'Imported.dxf', unitOverride?
       continue;
     }
 
+    // Our R12 fill triangles duplicate the authoritative closed POLYLINE.
+    if (record.type === 'SOLID' && layer === 'SD_REGION_FILL') continue;
+
     // VERTEX and SEQEND are consumed with their POLYLINE above.
     if (record.type !== 'VERTEX' && record.type !== 'SEQEND') {
       unsupported.set(record.type, (unsupported.get(record.type) ?? 0) + 1);
@@ -398,7 +484,16 @@ export function importDXF(text: string, fileName = 'Imported.dxf', unitOverride?
     }
   }
 
-  const validContours = contours.filter(c => c.points.length >= 3 && c.area > 1e-12);
+  let invalidPolygons = 0;
+  const validContours = contours.filter(c => {
+    if (c.points.length < 3 || c.area <= 1e-12) return false;
+    if (c.kind === 'polygon') {
+      c.points = uniqueCadVertices(c.points);
+      try { validateCadRegion(c.points); }
+      catch { if (!validLegacyKeyhole(c.points)) { invalidPolygons++; return false; } }
+    }
+    return true;
+  });
   if (validContours.length === 0) {
     return {
       success: false,
@@ -424,6 +519,7 @@ export function importDXF(text: string, fileName = 'Imported.dxf', unitOverride?
   const units = unitOverride ?? detectedUnit ?? 'mm';
   const warnings: string[] = [];
   if (!detectedUnit && !unitOverride) warnings.push('The DXF does not declare drawing units; coordinates were assumed to be millimetres.');
+  if (invalidPolygons) warnings.push(`${invalidPolygons} invalid closed polygon(s) were skipped rather than filled.`);
   if (openEntities > 0) warnings.push(`${openEntities} open or partial entit${openEntities === 1 ? 'y was' : 'ies were'} skipped because section boundaries must be closed.`);
   if (unsupported.size > 0) {
     warnings.push(`Unsupported entities were skipped: ${[...unsupported.entries()].map(([type, count]) => `${type} (${count})`).join(', ')}.`);

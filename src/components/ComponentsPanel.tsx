@@ -19,13 +19,14 @@ const COMPONENT_TYPES: { type: ComponentType; label: string; icon: string }[] = 
 
 interface Props {
   store: StoreState;
+  cadToolbox?: React.ReactNode;
   onOpenCustomShape: () => void;
   /** Open the coordinate editor for a custom-shape/polygon component */
   onEditCoordinates?: (comp: SectionComponent) => void;
 }
 
-export default function ComponentsPanel({ store, onOpenCustomShape, onEditCoordinates }: Props) {
-  const [showAdd, setShowAdd] = useState(false);
+export default function ComponentsPanel({ store, onOpenCustomShape, onEditCoordinates, cadToolbox }: Props) {
+  const [showAdd, setShowAdd] = useState(true);
   const [combineError, setCombineError] = useState<string | null>(null);
   const selectedCombined = store.project.components.find(c =>
     store.selectedIds.length === 1 && c.id === store.selectedIds[0] && c.combinedFrom?.length);
@@ -53,13 +54,17 @@ export default function ComponentsPanel({ store, onOpenCustomShape, onEditCoordi
           className="w-5 h-5 rounded flex items-center justify-center text-xs font-bold hover:opacity-80"
           style={{ background: 'var(--accent)' }}
           onClick={() => setShowAdd(!showAdd)}
+          title={showAdd ? 'Minimize component choices' : 'Expand component choices'}
+          aria-label={showAdd ? 'Minimize component choices' : 'Expand component choices'}
+          aria-expanded={showAdd}
+          aria-controls="component-choices"
         >
-          {showAdd ? '×' : '+'}
+          {showAdd ? '−' : '+'}
         </button>
       </div>
 
       {showAdd && (
-        <div className="p-2 border-b" style={{ borderColor: 'var(--border)' }}>
+        <div id="component-choices" className="p-2 border-b" style={{ borderColor: 'var(--border)' }}>
           <div className="grid grid-cols-3 gap-1 mb-2">
             {COMPONENT_TYPES.map(ct => (
               <button
@@ -68,7 +73,7 @@ export default function ComponentsPanel({ store, onOpenCustomShape, onEditCoordi
                 style={{ color: 'var(--text-secondary)' }}
                 onMouseEnter={e => (e.currentTarget.style.background = 'var(--bg-tertiary)')}
                 onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
-                onClick={() => { store.addComponent(ct.type); setShowAdd(false); }}
+                onClick={() => store.addComponent(ct.type)}
               >
                 <span className="text-base leading-none">{ct.icon}</span>
                 <span className="text-[10px] leading-tight text-center">{ct.label}</span>
@@ -79,7 +84,7 @@ export default function ComponentsPanel({ store, onOpenCustomShape, onEditCoordi
           <button
             className="w-full py-2 px-3 rounded text-xs font-semibold flex items-center justify-center gap-2 btn-ghost"
             style={{ border: '1px dashed var(--border)' }}
-            onClick={() => { onOpenCustomShape(); setShowAdd(false); }}
+            onClick={onOpenCustomShape}
           >
             <span>📐</span>
             <span>Custom Shape (Coordinates)</span>
@@ -154,6 +159,7 @@ export default function ComponentsPanel({ store, onOpenCustomShape, onEditCoordi
           ))
         )}
       </div>
+      {cadToolbox}
     </div>
   );
 }

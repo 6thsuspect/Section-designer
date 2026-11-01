@@ -1,3 +1,8 @@
+import { componentRegion } from './combine';
+import { cadRegion, synchronizeCadRegions, triangulateCadRegion } from './cadRegion';
+import { isClosedCadPath, uniqueCadVertices } from './cadPath';
+import { dimensionGeometry, drawingEntityPoints } from './cad';
+import { exportMidasMCT } from './midasMct';
 import type { SectionProject, SectionProperties, CalcTrace, SectionFileFormat, SectionComponent, Point } from './types';
 import type { Worksheet, Fill, Style } from 'exceljs';
 import { fmt, fmtSci, computeComponentProps } from './geometry';
@@ -16,7 +21,7 @@ export function createSectionFile(project: SectionProject): SectionFileFormat {
     application: APP_NAME,
     applicationVersion: APP_VERSION,
     exportedAt: new Date().toISOString(),
-    project,
+    project: synchronizeCadRegions(project),
   };
 }
 
@@ -48,6 +53,20 @@ export interface ImportResult {
   project?: SectionProject;
   error?: string;
   warnings?: string[];
+}
+
+function validateDraftingEntities(project: SectionProject): void {
+  if (project.drawingEntities === undefined) return;
+  if (!Array.isArray(project.drawingEntities)) throw new Error('Invalid CAD drawing entities.');
+  const ids = new Set(project.components.map(c => c.id));
+  for (const entity of project.drawingEntities) {
+    if (!entity || typeof entity.id !== 'string' || ids.has(entity.id) || !['line', 'polyline', 'arc', 'point', 'dimension', 'text', 'xline', 'ray'].includes(entity.kind) || !Array.isArray(entity.points) || entity.points.length < (['point', 'text'].includes(entity.kind) ? 1 : 2) || entity.points.some(p => !p || !Number.isFinite(p.x) || !Number.isFinite(p.y))) throw new Error('Invalid CAD path or duplicate object ID.');
+    if (entity.closed !== undefined && (typeof entity.closed !== 'boolean' || !['line', 'polyline'].includes(entity.kind) || (entity.closed && uniqueCadVertices(entity.points).length < 3))) throw new Error('Invalid CAD closure metadata.');
+    if (entity.kind === 'dimension' && (entity.points.length !== 3 || !['linear', 'aligned'].includes(entity.dimensionStyle ?? '') || (entity.dimensionStyle === 'linear' && (!entity.dimensionAxis || !Number.isFinite(entity.dimensionAxis.x) || !Number.isFinite(entity.dimensionAxis.y) || Math.abs(Math.hypot(entity.dimensionAxis.x, entity.dimensionAxis.y) - 1) > 1e-6)) || Math.hypot(entity.points[1].x - entity.points[0].x, entity.points[1].y - entity.points[0].y) < 1e-10)) throw new Error('Invalid CAD dimension.');
+    if (['xline', 'ray'].includes(entity.kind) && (entity.points.length !== 2 || Math.hypot(entity.points[1].x - entity.points[0].x, entity.points[1].y - entity.points[0].y) < 1e-10)) throw new Error('Invalid construction line.');
+    if (entity.kind === 'text' && (entity.points.length !== 1 || typeof entity.text !== 'string' || !entity.text.trim() || entity.text.length > 10000 || /[\x00-\x08\x0B-\x1F]/.test(entity.text) || !Number.isFinite(entity.textHeight) || entity.textHeight! <= 0 || !Number.isFinite(entity.textRotation ?? 0))) throw new Error('Invalid CAD text.');
+    ids.add(entity.id);
+  }
 }
 
 export function validateAndImportJSON(jsonString: string): ImportResult {
@@ -87,13 +106,15 @@ export function validateAndImportJSON(jsonString: string): ImportResult {
         }
       }
 
-      return { success: true, project, warnings: warnings.length > 0 ? warnings : undefined };
+      validateDraftingEntities(project);
+      return { success: true, project: synchronizeCadRegions(project), warnings: warnings.length > 0 ? warnings : undefined };
     }
 
     // Legacy format (direct project)
     if (data.components && Array.isArray(data.components)) {
+      validateDraftingEntities(data as SectionProject);
       warnings.push('This is a legacy file format. Consider re-exporting in the new format.');
-      return { success: true, project: data as SectionProject, warnings };
+      return { success: true, project: synchronizeCadRegions(data as SectionProject), warnings };
     }
 
     return { success: false, error: 'Unrecognized file format.' };
@@ -178,6 +199,7 @@ export function downloadCSV(props: SectionProperties, project: SectionProject): 
 type DXFColor = number;
 
 const DXF_LAYERS: { name: string; color: DXFColor; linetype: string }[] = [
+  { name: 'SD_REGION_FILL', color: 9, linetype: 'CONTINUOUS' },
   { name: 'SECTION', color: 7, linetype: 'CONTINUOUS' },
   { name: 'CUTOUT', color: 1, linetype: 'CONTINUOUS' },
   { name: 'DIMENSIONS', color: 3, linetype: 'CONTINUOUS' },
@@ -194,6 +216,7 @@ function generateDXFHeader(minX: number, minY: number, maxX: number, maxY: numbe
   let s = '';
   s += dxfPair(0, 'SECTION') + dxfPair(2, 'HEADER');
   s += dxfPair(9, '$ACADVER') + dxfPair(1, 'AC1009');
+  s += dxfPair(9, '$FILLMODE') + dxfPair(70, 1);
   s += dxfPair(9, '$INSBASE') + dxfPair(10, '0.0') + dxfPair(20, '0.0') + dxfPair(30, '0.0');
   s += dxfPair(9, '$EXTMIN') + dxfPair(10, (minX - 1).toFixed(4)) + dxfPair(20, (minY - 1).toFixed(4)) + dxfPair(30, '0.0');
   s += dxfPair(9, '$EXTMAX') + dxfPair(10, (maxX + 1).toFixed(4)) + dxfPair(20, (maxY + 1).toFixed(4)) + dxfPair(30, '0.0');
@@ -260,15 +283,27 @@ function generateDXFFooter(): string {
   return dxfPair(0, 'ENDSEC') + dxfPair(0, 'EOF');
 }
 
+/** R12 has no HATCH; non-overlapping SOLID triangles preserve actual fill. */
+function generateDXFRegionFill(points: Point[]): string {
+  return triangulateCadRegion(points).map(triangle => {
+    let data = dxfPair(0, 'SOLID') + dxfPair(8, 'SD_REGION_FILL');
+    [...triangle, triangle[2]].forEach((p, i) => {
+      data += dxfPair(10 + i, p.x.toFixed(6)) + dxfPair(20 + i, p.y.toFixed(6)) + dxfPair(30 + i, '0.0');
+    });
+    return data;
+  }).join('');
+}
+
 export function exportDXF(project: SectionProject, props: SectionProperties): string {
   const visibleComps = project.components.filter(c => c.visible);
   const outlines = visibleComps
     .map(c => computeComponentProps(c).outline.filter(p => Number.isFinite(p.x) && Number.isFinite(p.y)))
     .filter(o => o.length >= 2);
 
+  const drafting = project.drawingEntities ?? [];
   // Overall extents (components preferred, section bounds as fallback)
   let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
-  for (const outline of outlines) {
+  for (const outline of [...outlines, ...drafting.map(drawingEntityPoints)]) {
     for (const p of outline) {
       if (p.x < minX) minX = p.x;
       if (p.x > maxX) maxX = p.x;
@@ -294,13 +329,42 @@ export function exportDXF(project: SectionProject, props: SectionProperties): st
     const outline = outlines[i];
     if (outline && outline.length >= 2) {
       const layer = comp.operation === 'subtract' ? 'CUTOUT' : 'SECTION';
-      dxf += generateDXFPolyline(outline, layer, true);
+      if (comp.geometry.rings?.length) {
+        // Export real material rings, never zero-width keyhole bridge edges.
+        for (const polygon of componentRegion(comp)) polygon.forEach((ring, index) => {
+          const ringLayer = index === 0 ? layer : comp.operation === 'subtract' ? 'SECTION' : 'CUTOUT';
+          dxf += generateDXFPolyline(ring, ringLayer, true);
+        });
+      } else dxf += generateDXFPolyline(outline, layer, true);
 
       // Add component label
       const compProps = computeComponentProps(comp);
       dxf += generateDXFText(comp.name, compProps.cx, compProps.cy, textHeight, 'TEXT');
     }
   });
+
+  for (const entity of drafting) {
+    if (entity.kind === 'xline' || entity.kind === 'ray') {
+      const [a, b] = entity.points, length = Math.hypot(b.x - a.x, b.y - a.y);
+      dxf += dxfPair(0, entity.kind === 'xline' ? 'XLINE' : 'RAY') + dxfPair(8, 'CONSTRUCTION') + dxfPair(10, a.x) + dxfPair(20, a.y) + dxfPair(30, 0) + dxfPair(11, (b.x - a.x) / length) + dxfPair(21, (b.y - a.y) / length) + dxfPair(31, 0);
+    } else if (entity.kind === 'text') {
+      const origin = entity.points[0], radians = (entity.textRotation ?? 0) * Math.PI / 180, height = entity.textHeight ?? 10;
+      (entity.text ?? '').split('\n').forEach((line, index) => {
+        const offset = index * height * 1.2;
+        dxf += generateDXFText(line, origin.x + offset * Math.sin(radians), origin.y - offset * Math.cos(radians), height, 'DRAFT_TEXT') + dxfPair(50, entity.textRotation ?? 0);
+      });
+    } else if (entity.kind === 'dimension') {
+      const dimension = dimensionGeometry(entity, textHeight * 0.3);
+      for (const [a, b] of dimension.segments) dxf += generateDXFLine(a.x, a.y, b.x, b.y, 'DIMENSIONS');
+      dxf += generateDXFText(dimension.label, dimension.text.x, dimension.text.y, textHeight, 'DIMENSIONS');
+    } else if (entity.kind === 'point') {
+      const p = entity.points[0];
+      dxf += `0\nPOINT\n8\nDRAFT\n10\n${p.x}\n20\n${p.y}\n30\n0\n`;
+    } else {
+      if (cadRegion(entity)) dxf += generateDXFRegionFill(uniqueCadVertices(entity.points));
+      dxf += generateDXFPolyline(isClosedCadPath(entity) ? uniqueCadVertices(entity.points) : entity.points, 'DRAFT', isClosedCadPath(entity));
+    }
+  }
 
   // Guard: fully degenerate geometry still produces a valid (empty) DXF
   if (visibleComps.length === 0) {
@@ -1311,5 +1375,26 @@ export async function exportDetailedPDF(
     console.error('PDF export failed:', error);
     const message = error instanceof Error ? error.message : String(error);
     alert(`PDF export failed:\n${message}`);
+  }
+}
+
+// Boundary-based MIDAS general section export.
+export function downloadMCT(project: SectionProject): void {
+  try {
+    const data = exportMidasMCT(project);
+    if (!window.confirm('Export MIDAS boundary section?\n\nShear areas and Q values are not calculated and will be exported as zero placeholders. Torsion is an app estimate. Recalculate these properties in MIDAS before structural design.')) return;
+    const url = URL.createObjectURL(new Blob([data], { type: 'text/plain;charset=utf-8' }));
+    const a = document.createElement('a');
+    try {
+      a.href = url;
+      a.download = `${project.name.replace(/[^a-zA-Z0-9_.-]+/g, '_') || 'Section'}.mct`;
+      document.body.appendChild(a);
+      a.click();
+    } finally {
+      a.remove();
+      URL.revokeObjectURL(url);
+    }
+  } catch (error) {
+    alert(`MIDAS MCT export failed:\n${error instanceof Error ? error.message : String(error)}`);
   }
 }

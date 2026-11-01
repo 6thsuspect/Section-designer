@@ -1,7 +1,8 @@
 'use client';
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useRef } from 'react';
 import { validateAndImportJSON, type ImportResult } from '@/engine/exporters';
 import { importDXF, type DXFImportResult } from '@/engine/dxfImporter';
+import { importMidasMCT, type MidasSectionChoice } from '@/engine/midasMctImporter';
 import type { LengthUnit, SectionProject } from '@/engine/types';
 
 interface Props {
@@ -20,26 +21,46 @@ const DXF_UNITS: { value: LengthUnit; label: string }[] = [
 ];
 
 export default function ImportDialog({ onClose, onImport }: Props) {
+  const fileRequest = useRef(0);
   const [dragOver, setDragOver] = useState(false);
   const [result, setResult] = useState<DialogResult | null>(null);
   const [fileName, setFileName] = useState<string>('');
-  const [sourceType, setSourceType] = useState<'json' | 'dxf' | null>(null);
+  const [sourceType, setSourceType] = useState<'json' | 'dxf' | 'mct' | null>(null);
+  const [mctText, setMctText] = useState('');
+  const [mctSections, setMctSections] = useState<MidasSectionChoice[]>([]);
+  const [mctSection, setMctSection] = useState<number>();
   const [dxfText, setDxfText] = useState('');
   const [dxfUnit, setDxfUnit] = useState<LengthUnit>('mm');
 
   const handleFile = useCallback(async (file: File) => {
+    const request = ++fileRequest.current;
     setFileName(file.name);
     setResult(null);
+    setSourceType(null);
+    setMctText('');
+    setMctSections([]);
+    setMctSection(undefined);
+    setDxfText('');
     try {
       const text = await file.text();
+      if (request !== fileRequest.current) return;
       const isDxf = /\.dxf$/i.test(file.name);
       const isJson = /\.json$/i.test(file.name);
-      if (!isDxf && !isJson) {
+      const isMct = /\.mct$/i.test(file.name);
+      if (!isDxf && !isJson && !isMct) {
         setSourceType(null);
-        setResult({ success: false, error: 'Unsupported file type. Select an ASCII DXF or Section Designer JSON file.' });
+        setResult({ success: false, error: 'Unsupported file type. Select a MIDAS MCT, ASCII DXF or Section Designer JSON file.' });
         return;
       }
-      if (isDxf) {
+      if (isMct) {
+        setSourceType('mct');
+        setMctText(text);
+        const imported = importMidasMCT(text, file.name);
+        setMctSections(imported.sections);
+        setMctSection(imported.project?.sectionNumber ?? imported.sections[0]?.number);
+        setDxfUnit(imported.project?.units ?? 'mm');
+        setResult(imported);
+      } else if (isDxf) {
         setSourceType('dxf');
         setDxfText(text);
         const imported = importDXF(text, file.name);
@@ -51,14 +72,16 @@ export default function ImportDialog({ onClose, onImport }: Props) {
         setResult(validateAndImportJSON(text));
       }
     } catch {
+      if (request !== fileRequest.current) return;
       setResult({ success: false, error: 'Failed to read file.' });
     }
   }, []);
 
   const handleUnitChange = useCallback((unit: LengthUnit) => {
     setDxfUnit(unit);
-    if (dxfText) setResult(importDXF(dxfText, fileName, unit));
-  }, [dxfText, fileName]);
+    if (sourceType === 'mct') setResult(importMidasMCT(mctText, fileName, mctSection, unit));
+    else if (dxfText) setResult(importDXF(dxfText, fileName, unit));
+  }, [dxfText, fileName, sourceType, mctText, mctSection]);
 
   const handleDrop = useCallback((e: React.DragEvent) => {
     e.preventDefault();
@@ -70,6 +93,7 @@ export default function ImportDialog({ onClose, onImport }: Props) {
   const handleFileSelect = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) handleFile(file);
+    e.target.value = '';
   }, [handleFile]);
 
   const handleImport = () => {
@@ -97,14 +121,14 @@ export default function ImportDialog({ onClose, onImport }: Props) {
           >
             <div className="text-3xl mb-3">📐</div>
             <div className="text-sm mb-2" style={{ color: 'var(--text-primary)' }}>
-              Drag & drop a DXF or section file here
+              Drag & drop a MIDAS MCT, DXF or section file here
             </div>
             <div className="text-xs mb-4" style={{ color: 'var(--text-muted)' }}>
-              Closed DXF contours are converted into calculation geometry
+              MIDAS polygon sections and closed DXF contours become calculation geometry
             </div>
             <input
               type="file"
-              accept=".dxf,.json,.section.json,application/dxf,application/json"
+              accept=".mct,.dxf,.json,.section.json,application/dxf,application/json"
               onChange={handleFileSelect}
               className="hidden"
               id="file-input"
@@ -114,19 +138,37 @@ export default function ImportDialog({ onClose, onImport }: Props) {
             </label>
           </div>
 
-          {sourceType === 'dxf' && result?.success && (
+          {sourceType === 'mct' && mctSections.length > 0 && (
+            <div className="mt-4 text-xs">
+              <label htmlFor="mct-section" className="font-semibold">MIDAS section</label>
+              <select id="mct-section" className="input w-full mt-1" value={mctSection ?? ''}
+                onChange={e => {
+                  const number = Number(e.target.value);
+                  setMctSection(number);
+                  const imported = importMidasMCT(mctText, fileName, number);
+                  setDxfUnit(imported.project?.units ?? 'mm');
+                  setResult(imported);
+                }}>
+                {mctSections.map(section => <option key={section.number} value={section.number}>
+                  {section.number} — {section.name}{section.error ? ' (unsupported / invalid)' : ''}
+                </option>)}
+              </select>
+            </div>
+          )}
+
+          {(sourceType === 'dxf' || sourceType === 'mct') && result?.success && (
             <div className="mt-4 p-3 rounded-lg flex items-center justify-between gap-4" style={{ background: 'var(--bg-primary)', border: '1px solid var(--border)' }}>
               <div>
-                <div className="text-xs font-semibold" style={{ color: 'var(--text-primary)' }}>DXF coordinate unit</div>
+                <div className="text-xs font-semibold" style={{ color: 'var(--text-primary)' }}>{sourceType === 'mct' ? 'MIDAS' : 'DXF'} coordinate unit</div>
                 <div className="text-[10px] mt-0.5" style={{ color: 'var(--text-muted)' }}>
-                  {result.detectedUnit ? `Detected from $INSUNITS: ${result.detectedUnit}` : 'Not declared by the drawing — confirm the unit'}
+                  {result.detectedUnit ? `Detected from ${sourceType === 'mct' ? '*UNIT' : '$INSUNITS'}: ${result.detectedUnit}` : 'Not declared by the drawing — confirm the unit'}
                 </div>
               </div>
               <select
                 className="input text-xs py-1.5 w-44"
                 value={dxfUnit}
                 onChange={e => handleUnitChange(e.target.value as LengthUnit)}
-                aria-label="DXF coordinate unit"
+                aria-label={`${sourceType === 'mct' ? 'MIDAS' : 'DXF'} coordinate unit`}
               >
                 {DXF_UNITS.map(unit => <option key={unit.value} value={unit.value}>{unit.label}</option>)}
               </select>
@@ -140,7 +182,7 @@ export default function ImportDialog({ onClose, onImport }: Props) {
                   <div className="flex items-center gap-2 mb-2">
                     <span className="text-lg">✅</span>
                     <span className="font-semibold" style={{ color: 'var(--success)' }}>
-                      {sourceType === 'dxf' ? 'DXF geometry ready to import' : 'File validated successfully'}
+                      {sourceType === 'mct' ? 'MIDAS geometry ready to import' : sourceType === 'dxf' ? 'DXF geometry ready to import' : 'File validated successfully'}
                     </span>
                   </div>
 
@@ -148,6 +190,7 @@ export default function ImportDialog({ onClose, onImport }: Props) {
                     <div className="text-xs space-y-1" style={{ color: 'var(--text-secondary)' }}>
                       <div><strong>File:</strong> {fileName}</div>
                       <div><strong>Section:</strong> {result.project.name}</div>
+                      {sourceType === 'mct' && <div><strong>Section number:</strong> {result.project.sectionNumber}</div>}
                       <div><strong>Components:</strong> {result.project.components.length}</div>
                       <div><strong>Units:</strong> {result.project.units}</div>
                       {result.stats && (
@@ -181,6 +224,7 @@ export default function ImportDialog({ onClose, onImport }: Props) {
           <div className="mt-4 p-3 rounded-lg text-xs" style={{ background: 'var(--bg-primary)', color: 'var(--text-muted)' }}>
             <strong>Supported formats:</strong>
             <ul className="list-disc ml-4 mt-1 space-y-0.5">
+              <li>MIDAS MCT (.mct): non-tapered VALUE / GEN polygon sections, including IPOLY openings; choose one section per import</li>
               <li>ASCII DXF (.dxf): closed polylines, circles, ellipses, and connected line/arc loops</li>
               <li>Polyline bulge arcs are automatically discretized</li>
               <li>Nested contours and CUTOUT / HOLE / VOID layers become openings</li>

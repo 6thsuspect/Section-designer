@@ -88,6 +88,31 @@ function SettingsView({ store }: { store: StoreState }) {
         />
       </div>
 
+      <div className="p-2">
+        <label htmlFor="project-section-number" className="text-[10px] font-semibold uppercase mb-0.5 block" style={{ color: 'var(--text-muted)' }}>Section Number</label>
+        <input
+          key={`${store.project.id}-${store.project.sectionNumber ?? 1}`}
+          id="project-section-number"
+          className="input-field"
+          type="number"
+          min={1}
+          max={Number.MAX_SAFE_INTEGER}
+          step={1}
+          defaultValue={store.project.sectionNumber ?? 1}
+          onBlur={e => {
+            const value = Number(e.currentTarget.value);
+            if (Number.isSafeInteger(value) && value > 0) {
+              store.setSectionNumber(value);
+            } else {
+              e.currentTarget.value = String(store.project.sectionNumber ?? 1);
+            }
+          }}
+          onKeyDown={e => { if (e.key === 'Enter') e.currentTarget.blur(); }}
+          aria-describedby="section-number-help"
+        />
+        <div id="section-number-help" className="text-[10px] mt-1" style={{ color: 'var(--text-muted)' }}>Positive integer used in MIDAS MCT (SECT=).</div>
+      </div>
+
       {/* Description */}
       <div className="p-2">
         <label className="text-[10px] font-semibold uppercase mb-0.5 block" style={{ color: 'var(--text-muted)' }}>Description</label>
